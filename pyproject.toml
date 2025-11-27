@@ -1,0 +1,14 @@
+[project]
+name = "rembg-tool"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "backgroundremover>=0.3.5",
+    "moviepy<2.0",
+    "onnxruntime>=1.23.2",
+    "pillow>=12.0.0",
+    "rembg>=2.0.68",
+    "transparent-background>=1.3.4",
+]
