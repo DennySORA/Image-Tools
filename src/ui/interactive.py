@@ -145,6 +145,8 @@ class InteractiveUI:
             options = self._get_rembg_model_options(models)
         elif backend_name == "transparent-background":
             options = self._get_transparent_bg_mode_options(models)
+        elif backend_name == "greenscreen":
+            options = self._get_greenscreen_mode_options(models)
         else:
             options = self._get_backgroundremover_model_options(models)
 
@@ -183,6 +185,15 @@ class InteractiveUI:
             'u2net': 'U2Net 通用 (推薦)',
             'u2net_human_seg': 'U2Net 人像 - 精度最高',
             'u2netp': 'U2Net 輕量版 - 速度較快',
+        }
+        return [f"{m}: {descriptions.get(m, m)}" for m in models]
+
+    def _get_greenscreen_mode_options(self, models: list[str]) -> list[str]:
+        """取得 GreenScreen 模式選項"""
+        descriptions = {
+            'hybrid': '混合模式 - 色度鍵+AI+Despill，效果最好 (推薦)',
+            'chroma-only': '純色度鍵 - 速度最快，適合純色綠幕',
+            'ai-enhanced': 'AI增強 - 色度鍵+AI，保留原始色彩',
         }
         return [f"{m}: {descriptions.get(m, m)}" for m in models]
 
