@@ -81,7 +81,7 @@ class TransparentBgBackend(BaseBackend):
             threshold = 1.0 - (self.strength * 0.5)
 
             out = self._remover.process(img, type='rgba', threshold=threshold)
-            out.save(output_path)
+            out.save(output_path, 'PNG')
 
             return True
 
