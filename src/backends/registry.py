@@ -5,9 +5,10 @@
 新增後端只需使用 @register 裝飾器，無需修改此模組
 """
 
-from typing import Callable, Type, Any
+from collections.abc import Callable
+from typing import Any, cast
 
-from src.core.interfaces import BackendProtocol
+from src.core.interfaces import BackendProtocol, BaseBackend
 from src.core.models import BackendInfo, ModelInfo
 
 
@@ -18,10 +19,10 @@ class BackendRegistry:
     使用裝飾器模式註冊後端，實現開放封閉原則
     """
 
-    _backends: dict[str, Type[BackendProtocol]] = {}
+    _backends: dict[str, type[BaseBackend]] = {}
 
     @classmethod
-    def register(cls, name: str) -> Callable[[Type[BackendProtocol]], Type[BackendProtocol]]:
+    def register(cls, name: str) -> Callable[[type[BaseBackend]], type[BaseBackend]]:
         """
         註冊後端的裝飾器
 
@@ -36,13 +37,15 @@ class BackendRegistry:
             class MyBackend(BaseBackend):
                 ...
         """
-        def decorator(backend_class: Type[BackendProtocol]) -> Type[BackendProtocol]:
+
+        def decorator(backend_class: type[BaseBackend]) -> type[BaseBackend]:
             cls._backends[name] = backend_class
             return backend_class
+
         return decorator
 
     @classmethod
-    def get(cls, name: str) -> Type[BackendProtocol]:
+    def get(cls, name: str) -> type[BaseBackend]:
         """
         取得後端類別
 
@@ -56,12 +59,14 @@ class BackendRegistry:
             KeyError: 當後端不存在時
         """
         if name not in cls._backends:
-            available = ', '.join(cls._backends.keys())
+            available = ", ".join(cls._backends.keys())
             raise KeyError(f"後端 '{name}' 不存在，可用後端: {available}")
         return cls._backends[name]
 
     @classmethod
-    def create(cls, name: str, model: str, strength: float, **kwargs: Any) -> BackendProtocol:
+    def create(
+        cls, name: str, model: str, strength: float, **kwargs: Any
+    ) -> BackendProtocol:
         """
         建立後端實例
 
@@ -77,12 +82,12 @@ class BackendRegistry:
             後端實例
         """
         backend_class = cls.get(name)
+        constructor = cast(Callable[..., BackendProtocol], backend_class)
 
         # 根據不同後端調整參數名稱
         if name == "transparent-background":
-            return backend_class(mode=model, strength=strength, **kwargs)
-        else:
-            return backend_class(model=model, strength=strength, **kwargs)
+            return constructor(mode=model, strength=strength, **kwargs)
+        return constructor(model=model, strength=strength, **kwargs)
 
     @classmethod
     def list_backends(cls) -> list[BackendInfo]:
@@ -98,11 +103,13 @@ class BackendRegistry:
                 ModelInfo(name=m, description="")
                 for m in backend_class.get_available_models()
             )
-            result.append(BackendInfo(
-                name=name,
-                description=backend_class.description,
-                models=models,
-            ))
+            result.append(
+                BackendInfo(
+                    name=name,
+                    description=backend_class.description,
+                    models=models,
+                )
+            )
         return result
 
     @classmethod

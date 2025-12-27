@@ -6,4 +6,5 @@
 
 from .green_screen import GreenScreenProcessor
 
-__all__ = ['GreenScreenProcessor']
+
+__all__ = ["GreenScreenProcessor"]

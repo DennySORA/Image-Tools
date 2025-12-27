@@ -4,7 +4,8 @@
 提供控制台互動的基礎工具函數，遵循單一職責原則
 """
 
-from typing import Optional
+import sys
+from typing import TextIO
 
 
 class Console:
@@ -15,9 +16,31 @@ class Console:
     """
 
     @staticmethod
+    def _write(
+        message: str,
+        *,
+        end: str = "\n",
+        file: TextIO = sys.stdout,
+        flush: bool = False,
+    ) -> None:
+        file.write(f"{message}{end}")
+        if flush:
+            file.flush()
+
+    @staticmethod
     def clear() -> None:
         """清除螢幕"""
-        print("\033[2J\033[H", end="")
+        Console._write("\033[2J\033[H", end="", flush=True)
+
+    @staticmethod
+    def write_line(message: str) -> None:
+        """輸出單行文字"""
+        Console._write(message)
+
+    @staticmethod
+    def write_error(message: str) -> None:
+        """輸出錯誤文字到 stderr"""
+        Console._write(message, file=sys.stderr)
 
     @staticmethod
     def print_header(title: str, width: int = 60) -> None:
@@ -28,10 +51,10 @@ class Console:
             title: 標題文字
             width: 寬度
         """
-        print("=" * width)
-        print(title.center(width))
-        print("=" * width)
-        print()
+        Console._write("=" * width)
+        Console._write(title.center(width))
+        Console._write("=" * width)
+        Console._write("")
 
     @staticmethod
     def print_section(title: str, width: int = 40) -> None:
@@ -42,16 +65,16 @@ class Console:
             title: 標題文字
             width: 寬度
         """
-        print(f"\n{title}")
-        print("-" * width)
+        Console._write(f"\n{title}")
+        Console._write("-" * width)
 
     @staticmethod
     def print_separator(width: int = 50) -> None:
         """顯示分隔線"""
-        print("-" * width)
+        Console._write("-" * width)
 
     @staticmethod
-    def get_input(prompt: str, default: Optional[str] = None) -> str:
+    def get_input(prompt: str, default: str | None = None) -> str:
         """
         取得使用者輸入
 
@@ -65,8 +88,7 @@ class Console:
         if default:
             result = input(f"{prompt} [{default}]: ").strip()
             return result if result else default
-        else:
-            return input(f"{prompt}: ").strip()
+        return input(f"{prompt}: ").strip()
 
     @staticmethod
     def get_choice(prompt: str, options: list[str], default: int = 1) -> int:
@@ -81,10 +103,10 @@ class Console:
         Returns:
             使用者選擇的索引 (1-based)
         """
-        print(f"\n{prompt}")
+        Console._write(f"\n{prompt}")
         for i, option in enumerate(options, 1):
             marker = " *" if i == default else ""
-            print(f"  {i}. {option}{marker}")
+            Console._write(f"  {i}. {option}{marker}")
 
         while True:
             choice = input(f"\n請選擇 [1-{len(options)}] (預設: {default}): ").strip()
@@ -96,7 +118,7 @@ class Console:
                     return idx
             except ValueError:
                 pass
-            print(f"請輸入 1 到 {len(options)} 之間的數字")
+            Console._write(f"請輸入 1 到 {len(options)} 之間的數字")
 
     @staticmethod
     def get_number(
@@ -125,9 +147,9 @@ class Console:
                 num = float(value)
                 if min_val <= num <= max_val:
                     return num
-                print(f"請輸入 {min_val} 到 {max_val} 之間的數值")
+                Console._write(f"請輸入 {min_val} 到 {max_val} 之間的數值")
             except ValueError:
-                print("請輸入有效的數字")
+                Console._write("請輸入有效的數字")
 
     @staticmethod
     def confirm(prompt: str, default: bool = True) -> bool:
@@ -146,7 +168,7 @@ class Console:
 
         if not response:
             return default
-        return response in ('y', 'yes', '是')
+        return response in ("y", "yes", "是")
 
     @staticmethod
     def wait_for_key(prompt: str = "按 Enter 繼續...") -> None:

@@ -6,7 +6,7 @@
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import ClassVar, Protocol, runtime_checkable
 
 
 @runtime_checkable
@@ -22,8 +22,8 @@ class BackendProtocol(Protocol):
         strength: 去背強度 (0.1-1.0)
     """
 
-    name: str
-    description: str
+    name: ClassVar[str]
+    description: ClassVar[str]
     strength: float
 
     def load_model(self) -> None:
@@ -53,6 +53,10 @@ class BackendProtocol(Protocol):
         """取得模型說明"""
         ...
 
+    def ensure_model_loaded(self) -> None:
+        """確保模型已載入"""
+        ...
+
 
 class BaseBackend(ABC):
     """
@@ -61,8 +65,8 @@ class BaseBackend(ABC):
     提供共用功能，遵循單一職責原則 (SRP)
     """
 
-    name: str = ""
-    description: str = ""
+    name: ClassVar[str] = ""
+    description: ClassVar[str] = ""
 
     def __init__(self, strength: float = 0.5):
         """
@@ -77,24 +81,24 @@ class BaseBackend(ABC):
     @abstractmethod
     def load_model(self) -> None:
         """載入模型 - 子類別必須實作"""
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def process(self, input_path: Path, output_path: Path) -> bool:
         """處理單張圖片 - 子類別必須實作"""
-        pass
+        raise NotImplementedError
 
     @classmethod
     @abstractmethod
     def get_available_models(cls) -> list[str]:
         """取得可用模型列表 - 子類別必須實作"""
-        pass
+        raise NotImplementedError
 
     @classmethod
     @abstractmethod
     def get_model_description(cls) -> str:
         """取得模型說明 - 子類別必須實作"""
-        pass
+        raise NotImplementedError
 
     def ensure_model_loaded(self) -> None:
         """確保模型已載入"""

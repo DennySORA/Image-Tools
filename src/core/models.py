@@ -7,7 +7,6 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 
 @dataclass(frozen=True)
@@ -19,6 +18,7 @@ class ModelInfo:
         name: 模型名稱
         description: 模型描述
     """
+
     name: str
     description: str
 
@@ -33,6 +33,7 @@ class BackendInfo:
         description: 後端描述
         models: 可用模型列表
     """
+
     name: str
     description: str
     models: tuple[ModelInfo, ...] = field(default_factory=tuple)
@@ -52,16 +53,17 @@ class ProcessConfig:
         strength: 去背強度 (0.1-1.0)
         output_folder: 輸出資料夾路徑 (預設為 input_folder/output)
     """
+
     input_folder: Path
     backend_name: str
     model: str
     strength: float
-    output_folder: Path = field(default=None)
+    output_folder: Path | None = field(default=None)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         # frozen=True 時需要使用 object.__setattr__
         if self.output_folder is None:
-            object.__setattr__(self, 'output_folder', self.input_folder / 'output')
+            object.__setattr__(self, "output_folder", self.input_folder / "output")
 
 
 @dataclass(frozen=True)
@@ -77,6 +79,7 @@ class ProcessResult:
         failed: 失敗數
         output_folder: 輸出資料夾路徑
     """
+
     total: int
     success: int
     failed: int
@@ -102,6 +105,7 @@ class ImageFile:
         path: 檔案路徑
         name: 檔案名稱
     """
+
     path: Path
 
     @property
@@ -118,9 +122,9 @@ class ImageFile:
 
 
 # 支援的圖片格式
-SUPPORTED_EXTENSIONS: frozenset[str] = frozenset({
-    '.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif'
-})
+SUPPORTED_EXTENSIONS: frozenset[str] = frozenset(
+    {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"}
+)
 
 
 def is_supported_image(path: Path) -> bool:

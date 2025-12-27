@@ -9,28 +9,35 @@
 專為綠幕背景設計，效果優於單純 AI 去背
 """
 
+import io
+import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Optional, ClassVar
-import tempfile
+from typing import ClassVar, cast
 
-from PIL import Image
-from rembg import remove, new_session
 import numpy as np
-import cv2
+from PIL import Image
+from rembg import new_session, remove  # type: ignore[import-untyped]
 
 from src.core.interfaces import BaseBackend
-from src.postprocess.green_screen import GreenScreenProcessor, GreenScreenConfig
+from src.postprocess.green_screen import GreenScreenConfig, GreenScreenProcessor
+
 from .registry import BackendRegistry
 
 
 # 可用的處理模式
 AVAILABLE_MODES: tuple[str, ...] = (
-    'hybrid',           # 混合模式：色度鍵 + AI + Despill (推薦)
-    'chroma-only',      # 純色度鍵模式：速度最快
-    'ai-enhanced',      # AI 增強模式：色度鍵 + AI
+    "hybrid",  # 混合模式：色度鍵 + AI + Despill (推薦)
+    "chroma-only",  # 純色度鍵模式：速度最快
+    "ai-enhanced",  # AI 增強模式：色度鍵 + AI
 )
 
-DEFAULT_MODE: str = 'hybrid'
+DEFAULT_MODE: str = "hybrid"
+
+RemoveFunc = Callable[..., bytes]
+SessionFactory = Callable[[str], object]
+
+logger = logging.getLogger(__name__)
 
 
 @BackendRegistry.register("greenscreen")
@@ -79,24 +86,29 @@ class GreenScreenBackend(BaseBackend):
             erode_size=2,
             feather_amount=2,
         )
-        self._gs_processor: Optional[GreenScreenProcessor] = None
-        self._ai_session: Optional[object] = None
+        self._gs_processor: GreenScreenProcessor | None = None
+        self._ai_session: object | None = None
 
     def load_model(self) -> None:
         """載入模型"""
-        print(f"[GreenScreen] 載入模式: {self.mode}")
-        print(f"[GreenScreen] 綠色範圍: H={self.hue_range}, S>={self.saturation_min}")
-        print(f"[GreenScreen] 處理強度: {self.strength}")
+        logger.info("GreenScreen mode: %s", self.mode)
+        logger.info(
+            "GreenScreen hue range: H=%s, S>=%s",
+            self.hue_range,
+            self.saturation_min,
+        )
+        logger.info("GreenScreen strength: %s", self.strength)
 
         # 初始化綠幕處理器
         self._gs_processor = GreenScreenProcessor(self._gs_config)
 
         # 如果需要 AI，載入 rembg 模型
-        if self.mode in ('hybrid', 'ai-enhanced'):
-            print(f"[GreenScreen] 載入 AI 模型: isnet-anime")
-            self._ai_session = new_session('isnet-anime')
+        if self.mode in ("hybrid", "ai-enhanced"):
+            logger.info("GreenScreen AI model: isnet-anime")
+            session_factory = cast(SessionFactory, new_session)
+            self._ai_session = session_factory("isnet-anime")
 
-        print(f"[GreenScreen] 模型載入完成")
+        logger.info("GreenScreen models loaded")
 
     def _apply_chroma_key(self, image: Image.Image) -> Image.Image:
         """
@@ -108,7 +120,10 @@ class GreenScreenBackend(BaseBackend):
         Returns:
             處理後的 RGBA 圖片
         """
-        return self._gs_processor.process_image(image)
+        processor = self._gs_processor
+        if processor is None:
+            raise RuntimeError("GreenScreen processor not initialized")
+        return processor.process_image(image)
 
     def _apply_ai_refinement(self, image: Image.Image) -> Image.Image:
         """
@@ -120,14 +135,16 @@ class GreenScreenBackend(BaseBackend):
         Returns:
             AI 處理後的 RGBA 圖片
         """
-        # 轉換為 bytes
-        import io
         buffer = io.BytesIO()
-        image.save(buffer, format='PNG')
+        image.save(buffer, format="PNG")
         input_data = buffer.getvalue()
 
         # AI 去背
-        output_data = remove(
+        if self._ai_session is None:
+            raise RuntimeError("GreenScreen AI session not initialized")
+
+        remove_func = cast(RemoveFunc, remove)
+        output_data = remove_func(
             input_data,
             session=self._ai_session,
             alpha_matting=True,
@@ -136,7 +153,7 @@ class GreenScreenBackend(BaseBackend):
         )
 
         # 轉回 PIL Image
-        return Image.open(io.BytesIO(output_data)).convert('RGBA')
+        return Image.open(io.BytesIO(output_data)).convert("RGBA")
 
     def _apply_despill(self, image: Image.Image) -> Image.Image:
         """
@@ -174,12 +191,10 @@ class GreenScreenBackend(BaseBackend):
         new_g = g - (green_excess * self.strength)
         rgba[:, :, 1] = np.clip(new_g, 0, 255).astype(np.uint8)
 
-        return Image.fromarray(rgba, 'RGBA')
+        return Image.fromarray(rgba, "RGBA")
 
     def _merge_alpha_channels(
-        self,
-        chroma_image: Image.Image,
-        ai_image: Image.Image
+        self, chroma_image: Image.Image, ai_image: Image.Image
     ) -> Image.Image:
         """
         合併色度鍵和 AI 的 alpha 通道
@@ -203,7 +218,7 @@ class GreenScreenBackend(BaseBackend):
         result = ai_rgba.copy()
         result[:, :, 3] = merged_alpha
 
-        return Image.fromarray(result, 'RGBA')
+        return Image.fromarray(result, "RGBA")
 
     def process(self, input_path: Path, output_path: Path) -> bool:
         """
@@ -220,19 +235,17 @@ class GreenScreenBackend(BaseBackend):
 
         try:
             # 載入圖片
-            original = Image.open(input_path).convert('RGB')
+            original = Image.open(input_path).convert("RGB")
 
-            if self.mode == 'chroma-only':
+            if self.mode == "chroma-only":
                 # 純色度鍵模式
                 result = self._apply_chroma_key(original)
                 result = self._apply_despill(result)
-
-            elif self.mode == 'ai-enhanced':
+            elif self.mode == "ai-enhanced":
                 # 色度鍵 + AI
                 chroma_result = self._apply_chroma_key(original)
                 ai_result = self._apply_ai_refinement(original)
                 result = self._merge_alpha_channels(chroma_result, ai_result)
-
             else:  # hybrid (預設)
                 # 完整混合模式：色度鍵 + AI + Despill
                 chroma_result = self._apply_chroma_key(original)
@@ -241,14 +254,12 @@ class GreenScreenBackend(BaseBackend):
                 result = self._apply_despill(merged)
 
             # 儲存結果
-            result.save(output_path, 'PNG')
-            return True
-
-        except Exception as e:
-            print(f"[GreenScreen] 處理失敗 {input_path.name}: {e}")
-            import traceback
-            traceback.print_exc()
+            result.save(output_path, "PNG")
+        except Exception:
+            logger.exception("GreenScreen failed: %s", input_path.name)
             return False
+        else:
+            return True
 
     @classmethod
     def get_available_models(cls) -> list[str]:

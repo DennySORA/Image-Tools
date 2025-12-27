@@ -5,11 +5,17 @@
 依賴抽象介面而非具體實作，遵循依賴反轉原則 (DIP)
 """
 
+import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 from .interfaces import BackendProtocol
-from .models import ProcessConfig, ProcessResult, SUPPORTED_EXTENSIONS, is_supported_image
+from .models import (
+    SUPPORTED_EXTENSIONS,
+    ProcessConfig,
+    ProcessResult,
+    is_supported_image,
+)
 
 
 class ImageProcessor:
@@ -22,7 +28,7 @@ class ImageProcessor:
     def __init__(
         self,
         backend: BackendProtocol,
-        progress_callback: Optional[Callable[[int, int, str], None]] = None,
+        progress_callback: Callable[[int, int, str], None] | None = None,
     ):
         """
         初始化處理器
@@ -37,7 +43,8 @@ class ImageProcessor:
     @staticmethod
     def _default_progress(current: int, total: int, filename: str) -> None:
         """預設進度顯示"""
-        print(f"[{current}/{total}] {filename}", end=" ... ", flush=True)
+        sys.stdout.write(f"[{current}/{total}] {filename} ... ")
+        sys.stdout.flush()
 
     def scan_images(self, folder: Path) -> list[Path]:
         """
@@ -49,10 +56,7 @@ class ImageProcessor:
         Returns:
             圖片檔案路徑列表
         """
-        return [
-            f for f in sorted(folder.iterdir())
-            if is_supported_image(f)
-        ]
+        return [f for f in sorted(folder.iterdir()) if is_supported_image(f)]
 
     def process_folder(self, config: ProcessConfig) -> ProcessResult:
         """
@@ -64,8 +68,12 @@ class ImageProcessor:
         Returns:
             處理結果
         """
+        output_folder = config.output_folder
+        if output_folder is None:
+            raise ValueError("Output folder is not set")
+
         # 確保輸出資料夾存在
-        config.output_folder.mkdir(parents=True, exist_ok=True)
+        output_folder.mkdir(parents=True, exist_ok=True)
 
         # 掃描圖片
         image_files = self.scan_images(config.input_folder)
@@ -76,7 +84,7 @@ class ImageProcessor:
                 total=0,
                 success=0,
                 failed=0,
-                output_folder=config.output_folder,
+                output_folder=output_folder,
             )
 
         # 載入模型
@@ -86,21 +94,23 @@ class ImageProcessor:
         success_count = 0
 
         for i, image_path in enumerate(image_files, 1):
-            output_path = config.output_folder / f"{image_path.stem}.png"
+            output_path = output_folder / f"{image_path.stem}.png"
 
             self._progress_callback(i, total, image_path.name)
 
             if self._backend.process(image_path, output_path):
-                print("完成")
+                sys.stdout.write("完成\n")
+                sys.stdout.flush()
                 success_count += 1
             else:
-                print("失敗")
+                sys.stdout.write("失敗\n")
+                sys.stdout.flush()
 
         return ProcessResult(
             total=total,
             success=success_count,
             failed=total - success_count,
-            output_folder=config.output_folder,
+            output_folder=output_folder,
         )
 
     def process_single(self, input_path: Path, output_path: Path) -> bool:

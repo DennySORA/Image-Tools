@@ -6,10 +6,10 @@
 """
 
 from pathlib import Path
-from typing import Optional
 
-from src.core.models import ProcessConfig, ProcessResult, SUPPORTED_EXTENSIONS
 from src.backends.registry import BackendRegistry
+from src.core.models import SUPPORTED_EXTENSIONS, ProcessConfig, ProcessResult
+
 from .console import Console
 
 
@@ -20,11 +20,11 @@ class InteractiveUI:
     負責引導使用者完成設定流程
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """初始化 UI"""
         self._console = Console()
 
-    def run(self) -> Optional[ProcessConfig]:
+    def run(self) -> ProcessConfig | None:
         """
         執行交互式設定流程
 
@@ -66,10 +66,12 @@ class InteractiveUI:
         self._console.clear()
         self._console.print_header("圖片背景移除工具 (Interactive Mode)")
 
-        print("支援的圖片格式:", ", ".join(sorted(SUPPORTED_EXTENSIONS)))
-        print("輸出格式: PNG (保留透明通道)")
+        self._console.write_line(
+            f"支援的圖片格式: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
+        )
+        self._console.write_line("輸出格式: PNG (保留透明通道)")
 
-    def _select_folder(self) -> Optional[Path]:
+    def _select_folder(self) -> Path | None:
         """
         選擇資料夾
 
@@ -82,31 +84,34 @@ class InteractiveUI:
             folder_path = self._console.get_input("請輸入資料夾路徑")
 
             if not folder_path:
-                print("路徑不能為空")
+                self._console.write_line("路徑不能為空")
                 continue
 
             folder = Path(folder_path).expanduser().resolve()
 
             if not folder.exists():
-                print(f"錯誤: 資料夾不存在 - {folder}")
+                self._console.write_line(f"錯誤: 資料夾不存在 - {folder}")
                 continue
 
             if not folder.is_dir():
-                print(f"錯誤: 路徑不是資料夾 - {folder}")
+                self._console.write_line(f"錯誤: 路徑不是資料夾 - {folder}")
                 continue
 
             # 掃描圖片
             image_count = sum(
-                1 for f in folder.iterdir()
+                1
+                for f in folder.iterdir()
                 if f.is_file() and f.suffix.lower() in SUPPORTED_EXTENSIONS
             )
 
             if image_count == 0:
-                print(f"錯誤: 資料夾中沒有找到支援的圖片檔案")
-                print(f"支援的格式: {', '.join(SUPPORTED_EXTENSIONS)}")
+                self._console.write_line("錯誤: 資料夾中沒有找到支援的圖片檔案")
+                self._console.write_line(
+                    f"支援的格式: {', '.join(SUPPORTED_EXTENSIONS)}"
+                )
                 continue
 
-            print(f"\n找到 {image_count} 張圖片")
+            self._console.write_line(f"\n找到 {image_count} 張圖片")
             return folder
 
     def _select_backend(self) -> str:
@@ -157,43 +162,43 @@ class InteractiveUI:
     def _get_rembg_model_options(self, models: list[str]) -> list[str]:
         """取得 Rembg 模型選項"""
         descriptions = {
-            'birefnet-general': 'BiRefNet 通用 - 效果最好 (推薦)',
-            'birefnet-general-lite': 'BiRefNet 輕量版 - 速度較快',
-            'birefnet-portrait': 'BiRefNet 人像 - 人像專用',
-            'birefnet-massive': 'BiRefNet 大型 - 大型資料集訓練',
-            'isnet-general-use': 'ISNet 通用',
-            'isnet-anime': 'ISNet 動漫 - 動漫角色專用',
-            'u2net': 'U2Net 經典',
-            'u2netp': 'U2Net 輕量版',
-            'u2net_human_seg': 'U2Net 人體分割',
-            'silueta': 'Silueta - U2Net 壓縮版',
+            "birefnet-general": "BiRefNet 通用 - 效果最好 (推薦)",
+            "birefnet-general-lite": "BiRefNet 輕量版 - 速度較快",
+            "birefnet-portrait": "BiRefNet 人像 - 人像專用",
+            "birefnet-massive": "BiRefNet 大型 - 大型資料集訓練",
+            "isnet-general-use": "ISNet 通用",
+            "isnet-anime": "ISNet 動漫 - 動漫角色專用",
+            "u2net": "U2Net 經典",
+            "u2netp": "U2Net 輕量版",
+            "u2net_human_seg": "U2Net 人體分割",
+            "silueta": "Silueta - U2Net 壓縮版",
         }
         return [f"{m}: {descriptions.get(m, m)}" for m in models]
 
     def _get_transparent_bg_mode_options(self, models: list[str]) -> list[str]:
         """取得 Transparent Background 模式選項"""
         descriptions = {
-            'base': '預設模式 - 平衡速度與品質 (推薦)',
-            'fast': '快速模式 - 速度較快但品質稍低',
-            'base-nightly': 'Nightly 版本 - 可能有最新改進',
+            "base": "預設模式 - 平衡速度與品質 (推薦)",
+            "fast": "快速模式 - 速度較快但品質稍低",
+            "base-nightly": "Nightly 版本 - 可能有最新改進",
         }
         return [f"{m}: {descriptions.get(m, m)}" for m in models]
 
     def _get_backgroundremover_model_options(self, models: list[str]) -> list[str]:
         """取得 BackgroundRemover 模型選項"""
         descriptions = {
-            'u2net': 'U2Net 通用 (推薦)',
-            'u2net_human_seg': 'U2Net 人像 - 精度最高',
-            'u2netp': 'U2Net 輕量版 - 速度較快',
+            "u2net": "U2Net 通用 (推薦)",
+            "u2net_human_seg": "U2Net 人像 - 精度最高",
+            "u2netp": "U2Net 輕量版 - 速度較快",
         }
         return [f"{m}: {descriptions.get(m, m)}" for m in models]
 
     def _get_greenscreen_mode_options(self, models: list[str]) -> list[str]:
         """取得 GreenScreen 模式選項"""
         descriptions = {
-            'hybrid': '混合模式 - 色度鍵+AI+Despill，效果最好 (推薦)',
-            'chroma-only': '純色度鍵 - 速度最快，適合純色綠幕',
-            'ai-enhanced': 'AI增強 - 色度鍵+AI，保留原始色彩',
+            "hybrid": "混合模式 - 色度鍵+AI+Despill，效果最好 (推薦)",
+            "chroma-only": "純色度鍵 - 速度最快，適合純色綠幕",
+            "ai-enhanced": "AI增強 - 色度鍵+AI，保留原始色彩",
         }
         return [f"{m}: {descriptions.get(m, m)}" for m in models]
 
@@ -206,10 +211,12 @@ class InteractiveUI:
         """
         self._console.print_section("【步驟 4/4】設定去背強度")
 
-        print("強度說明:")
-        print("  - 較低 (0.3-0.5): 保守去背，保留更多邊緣細節")
-        print("  - 中等 (0.5-0.7): 平衡模式")
-        print("  - 較高 (0.7-1.0): 積極去背，邊緣更乾淨但可能損失細節")
+        self._console.write_line("強度說明:")
+        self._console.write_line("  - 較低 (0.3-0.5): 保守去背，保留更多邊緣細節")
+        self._console.write_line("  - 中等 (0.5-0.7): 平衡模式")
+        self._console.write_line(
+            "  - 較高 (0.7-1.0): 積極去背，邊緣更乾淨但可能損失細節"
+        )
 
         return self._console.get_number("\n去背強度", 0.1, 1.0, 0.5)
 
@@ -223,15 +230,16 @@ class InteractiveUI:
         Returns:
             是否確認
         """
-        print("\n" + "=" * 60)
-        print("確認設定")
-        print("=" * 60)
-        print(f"  資料夾: {config.input_folder}")
-        print(f"  後端:   {config.backend_name}")
-        print(f"  模型:   {config.model}")
-        print(f"  強度:   {config.strength}")
-        print(f"  輸出:   {config.output_folder}")
-        print()
+        self._console.write_line("\n" + "=" * 60)
+        self._console.write_line("確認設定")
+        self._console.write_line("=" * 60)
+        self._console.write_line(f"  資料夾: {config.input_folder}")
+        self._console.write_line(f"  後端:   {config.backend_name}")
+        self._console.write_line(f"  模型:   {config.model}")
+        self._console.write_line(f"  強度:   {config.strength}")
+        output_folder = config.output_folder or (config.input_folder / "output")
+        self._console.write_line(f"  輸出:   {output_folder}")
+        self._console.write_line("")
 
         return self._console.confirm("確定開始處理?")
 
@@ -243,16 +251,18 @@ class InteractiveUI:
             result: 處理結果
         """
         self._console.print_separator()
-        print(f"\n處理完成: {result.success}/{result.total} 張圖片成功")
+        self._console.write_line(
+            f"\n處理完成: {result.success}/{result.total} 張圖片成功"
+        )
 
         if result.failed > 0:
-            print(f"失敗: {result.failed} 張")
+            self._console.write_line(f"失敗: {result.failed} 張")
 
-        print(f"輸出位置: {result.output_folder}")
+        self._console.write_line(f"輸出位置: {result.output_folder}")
 
     def show_cancelled(self) -> None:
         """顯示取消訊息"""
-        print("\n已取消")
+        self._console.write_line("\n已取消")
 
     def wait_for_exit(self) -> None:
         """等待退出"""

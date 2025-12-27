@@ -3,14 +3,15 @@
 """
 
 from .interfaces import BackendProtocol
-from .models import ProcessConfig, ProcessResult, BackendInfo, ModelInfo
+from .models import BackendInfo, ModelInfo, ProcessConfig, ProcessResult
 from .processor import ImageProcessor
 
+
 __all__ = [
-    'BackendProtocol',
-    'ProcessConfig',
-    'ProcessResult',
-    'BackendInfo',
-    'ModelInfo',
-    'ImageProcessor',
+    "BackendProtocol",
+    "ProcessConfig",
+    "ProcessResult",
+    "BackendInfo",
+    "ModelInfo",
+    "ImageProcessor",
 ]

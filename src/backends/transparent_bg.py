@@ -4,24 +4,37 @@ Transparent Background 背景移除後端
 使用 transparent-background 套件 (InSPyReNet 模型) 進行背景移除
 """
 
+import logging
 from pathlib import Path
-from typing import Optional, ClassVar
+from typing import ClassVar, Protocol, cast
 
 from PIL import Image
-from transparent_background import Remover
+from transparent_background import Remover  # type: ignore[import-untyped]
 
 from src.core.interfaces import BaseBackend
+
 from .registry import BackendRegistry
 
 
 # 可用的模式
 AVAILABLE_MODES: tuple[str, ...] = (
-    'base',
-    'fast',
-    'base-nightly',
+    "base",
+    "fast",
+    "base-nightly",
 )
 
-DEFAULT_MODE: str = 'base'
+DEFAULT_MODE: str = "base"
+
+logger = logging.getLogger(__name__)
+
+
+class RemoverProtocol(Protocol):
+    """Typed interface for transparent_background.Remover."""
+
+    def process(
+        self, image: Image.Image, *, type: str, threshold: float
+    ) -> Image.Image:
+        """Process the image and return a new image."""
 
 
 @BackendRegistry.register("transparent-background")
@@ -34,6 +47,7 @@ class TransparentBgBackend(BaseBackend):
 
     name: ClassVar[str] = "transparent-background"
     description: ClassVar[str] = "Transparent Background - 使用 InSPyReNet 模型"
+    THRESHOLD_SCALE: ClassVar[float] = 0.5
 
     def __init__(self, mode: str = DEFAULT_MODE, strength: float = 0.5):
         """
@@ -52,14 +66,14 @@ class TransparentBgBackend(BaseBackend):
             raise ValueError(f"不支援的模式: {mode}，可用模式: {AVAILABLE_MODES}")
 
         self.mode = mode
-        self._remover: Optional[Remover] = None
+        self._remover: RemoverProtocol | None = None
 
     def load_model(self) -> None:
         """載入模型"""
-        print(f"[TransparentBg] 載入模型: mode={self.mode}")
-        print(f"[TransparentBg] 去背強度: {self.strength}")
-        self._remover = Remover(mode=self.mode)
-        print(f"[TransparentBg] 模型載入完成")
+        logger.info("TransparentBg mode: %s", self.mode)
+        logger.info("TransparentBg strength: %s", self.strength)
+        self._remover = cast(RemoverProtocol, Remover(mode=self.mode))
+        logger.info("TransparentBg model loaded")
 
     def process(self, input_path: Path, output_path: Path) -> bool:
         """
@@ -74,20 +88,24 @@ class TransparentBgBackend(BaseBackend):
         """
         self.ensure_model_loaded()
 
+        remover = self._remover
+        if remover is None:
+            logger.error("TransparentBg remover not loaded")
+            return False
+
         try:
-            img = Image.open(input_path).convert('RGB')
+            img = Image.open(input_path).convert("RGB")
 
             # 根據強度設定閾值
-            threshold = 1.0 - (self.strength * 0.5)
+            threshold = 1.0 - (self.strength * self.THRESHOLD_SCALE)
 
-            out = self._remover.process(img, type='rgba', threshold=threshold)
-            out.save(output_path, 'PNG')
-
-            return True
-
-        except Exception as e:
-            print(f"[TransparentBg] 處理失敗 {input_path.name}: {e}")
+            out = remover.process(img, type="rgba", threshold=threshold)
+            out.save(output_path, "PNG")
+        except Exception:
+            logger.exception("TransparentBg failed: %s", input_path.name)
             return False
+        else:
+            return True
 
     @classmethod
     def get_available_models(cls) -> list[str]:
