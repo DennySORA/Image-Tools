@@ -5,4 +5,5 @@
 from .console import Console
 from .interactive import InteractiveUI
 
-__all__ = ['Console', 'InteractiveUI']
+
+__all__ = ["Console", "InteractiveUI"]

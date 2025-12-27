@@ -4,21 +4,30 @@ BackgroundRemover 背景移除後端
 使用 backgroundremover 套件進行背景移除，支援 Alpha Matting
 """
 
+import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Optional, Callable, ClassVar
+from typing import ClassVar, cast
+
+from backgroundremover import bg as background_bg  # type: ignore[import-untyped]
 
 from src.core.interfaces import BaseBackend
+
 from .registry import BackendRegistry
 
 
 # 可用的模型列表
 AVAILABLE_MODELS: tuple[str, ...] = (
-    'u2net',
-    'u2net_human_seg',
-    'u2netp',
+    "u2net",
+    "u2net_human_seg",
+    "u2netp",
 )
 
-DEFAULT_MODEL: str = 'u2net'
+DEFAULT_MODEL: str = "u2net"
+
+RemoveFunc = Callable[..., bytes]
+
+logger = logging.getLogger(__name__)
 
 
 @BackendRegistry.register("backgroundremover")
@@ -62,22 +71,24 @@ class BackgroundRemoverBackend(BaseBackend):
         self.background_threshold = int(self.strength * 20)
         self.erode_size = max(1, min(25, int(10 * self.strength * 2)))
 
-        self._remove_func: Optional[Callable] = None
+        self._remove_func: RemoveFunc | None = None
 
     def load_model(self) -> None:
         """載入模型"""
-        print(f"[BackgroundRemover] 使用模型: {self.model}")
-        print(f"[BackgroundRemover] 去背強度: {self.strength}")
-        print(f"[BackgroundRemover] Alpha Matting: {self.alpha_matting}")
+        logger.info("BackgroundRemover model: %s", self.model)
+        logger.info("BackgroundRemover strength: %s", self.strength)
+        logger.info("BackgroundRemover alpha matting: %s", self.alpha_matting)
 
         if self.alpha_matting:
-            print(f"[BackgroundRemover] 前景閾值: {self.foreground_threshold}")
-            print(f"[BackgroundRemover] 背景閾值: {self.background_threshold}")
-            print(f"[BackgroundRemover] 侵蝕大小: {self.erode_size}")
+            logger.info(
+                "BackgroundRemover foreground threshold: %s", self.foreground_threshold
+            )
+            logger.info(
+                "BackgroundRemover background threshold: %s", self.background_threshold
+            )
+            logger.info("BackgroundRemover erode size: %s", self.erode_size)
 
-        # 延遲載入以避免 import 錯誤
-        from backgroundremover.bg import remove
-        self._remove_func = remove
+        self._remove_func = cast(RemoveFunc, background_bg.remove)
 
     def process(self, input_path: Path, output_path: Path) -> bool:
         """
@@ -92,11 +103,16 @@ class BackgroundRemoverBackend(BaseBackend):
         """
         self.ensure_model_loaded()
 
+        remove_func = self._remove_func
+        if remove_func is None:
+            logger.error("BackgroundRemover remove function not loaded")
+            return False
+
         try:
-            with open(input_path, 'rb') as f:
+            with open(input_path, "rb") as f:
                 input_data = f.read()
 
-            output_data = self._remove_func(
+            output_data = remove_func(
                 input_data,
                 model_name=self.model,
                 alpha_matting=self.alpha_matting,
@@ -105,14 +121,13 @@ class BackgroundRemoverBackend(BaseBackend):
                 alpha_matting_erode_structure_size=self.erode_size,
             )
 
-            with open(output_path, 'wb') as f:
+            with open(output_path, "wb") as f:
                 f.write(output_data)
-
-            return True
-
-        except Exception as e:
-            print(f"[BackgroundRemover] 處理失敗 {input_path.name}: {e}")
+        except Exception:
+            logger.exception("BackgroundRemover failed: %s", input_path.name)
             return False
+        else:
+            return True
 
     @classmethod
     def get_available_models(cls) -> list[str]:

@@ -9,10 +9,11 @@
     uv run main.py
 """
 
+import logging
 import sys
 
-from src.core.processor import ImageProcessor
 from src.backends import BackendRegistry
+from src.core.processor import ImageProcessor
 from src.ui import InteractiveUI
 
 
@@ -23,6 +24,7 @@ def main() -> int:
     Returns:
         退出碼 (0: 成功, 1: 失敗或取消)
     """
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     try:
         # 1. 建立 UI
         ui = InteractiveUI()
@@ -49,16 +51,18 @@ def main() -> int:
         ui.show_result(result)
         ui.wait_for_exit()
 
+    except KeyboardInterrupt:
+        sys.stdout.write("\n\n已取消\n")
+        sys.stdout.flush()
+        return 1
+
+    except Exception as exc:
+        sys.stderr.write(f"\n錯誤: {exc}\n")
+        sys.stderr.flush()
+        return 1
+    else:
         return 0 if result.is_complete_success else 1
 
-    except KeyboardInterrupt:
-        print("\n\n已取消")
-        return 1
 
-    except Exception as e:
-        print(f"\n錯誤: {e}", file=sys.stderr)
-        return 1
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

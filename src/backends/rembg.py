@@ -7,33 +7,41 @@ Rembg 背景移除後端
 - U2Net 系列
 """
 
+import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Optional, ClassVar
+from typing import ClassVar, cast
 
-from rembg import remove, new_session
+from rembg import new_session, remove  # type: ignore[import-untyped]
 
 from src.core.interfaces import BaseBackend
+
 from .registry import BackendRegistry
 
 
 # 可用的模型列表
 AVAILABLE_MODELS: tuple[str, ...] = (
     # BiRefNet 系列 (效果最好)
-    'birefnet-general',
-    'birefnet-general-lite',
-    'birefnet-portrait',
-    'birefnet-massive',
+    "birefnet-general",
+    "birefnet-general-lite",
+    "birefnet-portrait",
+    "birefnet-massive",
     # ISNet 系列
-    'isnet-general-use',
-    'isnet-anime',
+    "isnet-general-use",
+    "isnet-anime",
     # U2Net 系列
-    'u2net',
-    'u2netp',
-    'u2net_human_seg',
-    'silueta',
+    "u2net",
+    "u2netp",
+    "u2net_human_seg",
+    "silueta",
 )
 
-DEFAULT_MODEL: str = 'birefnet-general'
+DEFAULT_MODEL: str = "birefnet-general"
+
+RemoveFunc = Callable[..., bytes]
+SessionFactory = Callable[[str], object]
+
+logger = logging.getLogger(__name__)
 
 
 @BackendRegistry.register("rembg")
@@ -46,6 +54,7 @@ class RembgBackend(BaseBackend):
 
     name: ClassVar[str] = "rembg"
     description: ClassVar[str] = "Rembg - 支援多種模型 (BiRefNet, ISNet, U2Net)"
+    ALPHA_MATTING_THRESHOLD: ClassVar[float] = 0.5
 
     def __init__(self, model: str = DEFAULT_MODEL, strength: float = 0.5):
         """
@@ -64,14 +73,15 @@ class RembgBackend(BaseBackend):
             raise ValueError(f"不支援的模型: {model}，可用模型: {AVAILABLE_MODELS}")
 
         self.model = model
-        self._session: Optional[object] = None
+        self._session: object | None = None
 
     def load_model(self) -> None:
         """載入模型"""
-        print(f"[Rembg] 載入模型: {self.model}")
-        print(f"[Rembg] 去背強度: {self.strength}")
-        self._session = new_session(self.model)
-        print(f"[Rembg] 模型載入完成")
+        logger.info("Rembg model: %s", self.model)
+        logger.info("Rembg strength: %s", self.strength)
+        session_factory = cast(SessionFactory, new_session)
+        self._session = session_factory(self.model)
+        logger.info("Rembg model loaded")
 
     def process(self, input_path: Path, output_path: Path) -> bool:
         """
@@ -86,16 +96,21 @@ class RembgBackend(BaseBackend):
         """
         self.ensure_model_loaded()
 
+        if self._session is None:
+            logger.error("Rembg session not initialized")
+            return False
+
         try:
-            with open(input_path, 'rb') as f:
+            with open(input_path, "rb") as f:
                 input_data = f.read()
 
             # 根據強度調整參數
-            alpha_matting = self.strength >= 0.5
+            alpha_matting = self.strength >= self.ALPHA_MATTING_THRESHOLD
             fg_threshold = int(255 - (self.strength * 50))
             bg_threshold = int(self.strength * 30)
 
-            output_data = remove(
+            remove_func = cast(RemoveFunc, remove)
+            output_data = remove_func(
                 input_data,
                 session=self._session,
                 alpha_matting=alpha_matting,
@@ -103,14 +118,13 @@ class RembgBackend(BaseBackend):
                 alpha_matting_background_threshold=bg_threshold,
             )
 
-            with open(output_path, 'wb') as f:
+            with open(output_path, "wb") as f:
                 f.write(output_data)
-
-            return True
-
-        except Exception as e:
-            print(f"[Rembg] 處理失敗 {input_path.name}: {e}")
+        except Exception:
+            logger.exception("Rembg failed: %s", input_path.name)
             return False
+        else:
+            return True
 
     @classmethod
     def get_available_models(cls) -> list[str]:

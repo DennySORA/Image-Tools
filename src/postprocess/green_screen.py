@@ -5,12 +5,16 @@
 支援三層處理：色度鍵 → AI 精細化 → Despill
 """
 
+import logging
+from dataclasses import dataclass
+from pathlib import Path
+
 import cv2
 import numpy as np
 from PIL import Image
-from pathlib import Path
-from dataclasses import dataclass
-from typing import Optional, Tuple
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -28,6 +32,7 @@ class GreenScreenConfig:
         erode_size: 腐蝕核大小 (用於縮小 mask 邊緣)
         feather_amount: 邊緣羽化量
     """
+
     hue_min: int = 35
     hue_max: int = 85
     saturation_min: int = 40
@@ -45,7 +50,7 @@ class GreenScreenProcessor:
     實現色度鍵 (Chroma Key) 技術，專門針對綠幕背景優化
     """
 
-    def __init__(self, config: Optional[GreenScreenConfig] = None):
+    def __init__(self, config: GreenScreenConfig | None = None) -> None:
         """
         初始化綠幕處理器
 
@@ -70,21 +75,13 @@ class GreenScreenProcessor:
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
         # 定義綠色範圍
-        lower_green = np.array([
-            self.config.hue_min,
-            self.config.saturation_min,
-            self.config.value_min
-        ])
-        upper_green = np.array([
-            self.config.hue_max,
-            255,
-            255
-        ])
+        lower_green = np.array(
+            [self.config.hue_min, self.config.saturation_min, self.config.value_min]
+        )
+        upper_green = np.array([self.config.hue_max, 255, 255])
 
         # 建立遮罩
-        mask = cv2.inRange(hsv, lower_green, upper_green)
-
-        return mask
+        return cv2.inRange(hsv, lower_green, upper_green)
 
     def refine_mask(self, mask: np.ndarray) -> np.ndarray:
         """
@@ -99,22 +96,17 @@ class GreenScreenProcessor:
             優化後的遮罩
         """
         # 形態學閉運算：填補小洞
-        kernel_close = cv2.getStructuringElement(
-            cv2.MORPH_ELLIPSE, (5, 5)
-        )
+        kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel_close)
 
         # 形態學開運算：移除雜訊
-        kernel_open = cv2.getStructuringElement(
-            cv2.MORPH_ELLIPSE, (3, 3)
-        )
+        kernel_open = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel_open)
 
         # 腐蝕：縮小遮罩邊緣，避免綠邊
         if self.config.erode_size > 0:
             kernel_erode = cv2.getStructuringElement(
-                cv2.MORPH_ELLIPSE,
-                (self.config.erode_size, self.config.erode_size)
+                cv2.MORPH_ELLIPSE, (self.config.erode_size, self.config.erode_size)
             )
             mask = cv2.erode(mask, kernel_erode, iterations=1)
 
@@ -125,7 +117,7 @@ class GreenScreenProcessor:
 
         return mask
 
-    def despill_green(self, image: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    def despill_green(self, image: np.ndarray, _mask: np.ndarray) -> np.ndarray:
         """
         移除邊緣的綠色溢出 (Green Spill)
 
@@ -161,10 +153,8 @@ class GreenScreenProcessor:
         return result.astype(np.uint8)
 
     def apply_chroma_key(
-        self,
-        image: np.ndarray,
-        existing_alpha: Optional[np.ndarray] = None
-    ) -> Tuple[np.ndarray, np.ndarray]:
+        self, image: np.ndarray, existing_alpha: np.ndarray | None = None
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
         應用色度鍵處理
 
@@ -204,12 +194,12 @@ class GreenScreenProcessor:
             處理後的 RGBA Image
         """
         # 轉換為 numpy array
-        if image.mode == 'RGBA':
+        if image.mode == "RGBA":
             rgba = np.array(image)
             bgr = cv2.cvtColor(rgba[:, :, :3], cv2.COLOR_RGB2BGR)
             existing_alpha = rgba[:, :, 3]
         else:
-            rgb = np.array(image.convert('RGB'))
+            rgb = np.array(image.convert("RGB"))
             bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
             existing_alpha = None
 
@@ -222,7 +212,7 @@ class GreenScreenProcessor:
         # 組合 RGBA
         result_rgba = np.dstack([result_rgb, alpha])
 
-        return Image.fromarray(result_rgba, 'RGBA')
+        return Image.fromarray(result_rgba, "RGBA")
 
     def process_file(self, input_path: Path, output_path: Path) -> bool:
         """
@@ -238,8 +228,9 @@ class GreenScreenProcessor:
         try:
             image = Image.open(input_path)
             result = self.process_image(image)
-            result.save(output_path, 'PNG')
-            return True
-        except Exception as e:
-            print(f"[GreenScreen] 處理失敗 {input_path.name}: {e}")
+            result.save(output_path, "PNG")
+        except Exception:
+            logger.exception("GreenScreen postprocess failed: %s", input_path.name)
             return False
+        else:
+            return True

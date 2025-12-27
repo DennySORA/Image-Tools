@@ -4,6 +4,24 @@
 
 A user-friendly tool for removing image backgrounds with multiple methods and a guided flow. It is designed for batch processing and for handling both everyday photos and green-screen shots.
 
+## Installation
+- Make sure Python 3.13 and `uv` are available.
+- Clone the repository and install dependencies.
+
+```bash
+git clone <repository-url>
+cd Remove-Background
+uv sync
+```
+
+## How to Use
+- Start the interactive flow and follow the prompts.
+- Outputs are saved as transparent PNGs in an `output/` folder under the selected directory.
+
+```bash
+uv run main.py
+```
+
 ## Usage Options
 - Guided interactive flow: select a folder, pick a removal method, adjust strength, and confirm before processing.
 - Green-screen workflow: optimized for solid green backdrops to clean edges and reduce color spill.
