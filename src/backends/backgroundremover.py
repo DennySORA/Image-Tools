@@ -9,6 +9,16 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import ClassVar, cast
 
+# Monkeypatch moviepy to fix compatibility with backgroundremover
+try:
+    import moviepy
+    import moviepy.editor
+
+    if not hasattr(moviepy, "VideoFileClip"):
+        moviepy.VideoFileClip = moviepy.editor.VideoFileClip
+except ImportError:
+    pass
+
 from backgroundremover import bg as background_bg  # type: ignore[import-untyped]
 
 from src.core.interfaces import BaseBackend
