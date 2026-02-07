@@ -91,7 +91,12 @@ class Console:
         return input(f"{prompt}: ").strip()
 
     @staticmethod
-    def get_choice(prompt: str, options: list[str], default: int = 1) -> int:
+    def get_choice(
+        prompt: str,
+        options: list[str],
+        default: int = 1,
+        allow_back: bool = False,
+    ) -> int | None:
         """
         取得使用者選擇
 
@@ -99,19 +104,25 @@ class Console:
             prompt: 提示文字
             options: 選項列表
             default: 預設選項 (1-based)
+            allow_back: 是否允許返回上一步
 
         Returns:
-            使用者選擇的索引 (1-based)
+            使用者選擇的索引 (1-based)，若返回上一步則為 None
         """
         Console._write(f"\n{prompt}")
         for i, option in enumerate(options, 1):
             marker = " *" if i == default else ""
             Console._write(f"  {i}. {option}{marker}")
 
+        back_hint = " (輸入 b 返回)" if allow_back else ""
         while True:
-            choice = input(f"\n請選擇 [1-{len(options)}] (預設: {default}): ").strip()
+            choice = input(
+                f"\n請選擇 [1-{len(options)}]{back_hint} (預設: {default}): "
+            ).strip()
             if not choice:
                 return default
+            if allow_back and choice.lower() in ("b", "back", "返回"):
+                return None
             try:
                 idx = int(choice)
                 if 1 <= idx <= len(options):

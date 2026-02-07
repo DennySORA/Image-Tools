@@ -25,31 +25,39 @@ def main() -> int:
         退出碼 (0: 成功, 1: 失敗或取消)
     """
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+
     try:
-        # 1. 建立 UI
+        # 建立 UI
         ui = InteractiveUI()
+        last_result_success = True
 
-        # 2. 執行交互式設定流程
-        config = ui.run()
+        # 主循環 - 支援連續處理
+        while True:
+            # 1. 執行交互式設定流程
+            config = ui.run()
 
-        if config is None:
-            ui.show_cancelled()
-            return 1
+            if config is None:
+                ui.show_cancelled()
+                break
 
-        # 3. 建立後端
-        backend = BackendRegistry.create(
-            name=config.backend_name,
-            model=config.model,
-            strength=config.strength,
-        )
+            # 2. 建立後端
+            backend = BackendRegistry.create(
+                name=config.backend_name,
+                model=config.model,
+                strength=config.strength,
+            )
 
-        # 4. 建立處理器並處理圖片
-        processor = ImageProcessor(backend)
-        result = processor.process_folder(config)
+            # 3. 建立處理器並處理圖片
+            processor = ImageProcessor(backend)
+            result = processor.process_folder(config)
+            last_result_success = result.is_complete_success
 
-        # 5. 顯示結果
-        ui.show_result(result)
-        ui.wait_for_exit()
+            # 4. 顯示結果
+            ui.show_result(result)
+
+            # 5. 詢問是否繼續
+            if not ui.ask_continue():
+                break
 
     except KeyboardInterrupt:
         sys.stdout.write("\n\n已取消\n")
@@ -61,7 +69,7 @@ def main() -> int:
         sys.stderr.flush()
         return 1
     else:
-        return 0 if result.is_complete_success else 1
+        return 0 if last_result_success else 1
 
 
 if __name__ == "__main__":

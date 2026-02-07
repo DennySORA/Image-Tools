@@ -14,11 +14,17 @@ from .console import Console
 from .history import PathHistory
 
 
+# 強度範圍常數
+MIN_STRENGTH: float = 0.1
+MAX_STRENGTH: float = 1.0
+DEFAULT_STRENGTH: float = 0.5
+
+
 class InteractiveUI:
     """
     交互式使用者介面
 
-    負責引導使用者完成設定流程
+    負責引導使用者完成設定流程，支援返回上一步
     """
 
     def __init__(self) -> None:
@@ -35,36 +41,66 @@ class InteractiveUI:
         """
         self._show_welcome()
 
+        # 使用狀態機模式支援返回上一步
+        folder: Path | None = None
+        backend_name: str | None = None
+        model: str | None = None
+        strength: float | None = None
+
         # 步驟 1: 選擇資料夾
-        folder = self._select_folder()
-        if folder is None:
-            return None
+        while folder is None:
+            folder = self._select_folder()
+            if folder is None:
+                return None  # 使用者在第一步取消
 
         # 步驟 2: 選擇後端
-        backend_name = self._select_backend()
+        while backend_name is None:
+            backend_name = self._select_backend()
+            if backend_name is None:
+                # 返回步驟 1
+                folder = None
+                continue
 
-        # 步驟 3: 選擇模型
-        model = self._select_model(backend_name)
+            # 步驟 3: 選擇模型
+            model = self._select_model(backend_name)
+            if model is None:
+                # 返回步驟 2
+                backend_name = None
+                continue
 
-        # 步驟 4: 設定強度 (gemini-watermark 固定為 1.0)
-        if backend_name == "gemini-watermark":
-            strength = 1.0
-        else:
-            strength = self._select_strength()
+            # 步驟 4: 設定強度 (gemini-watermark 固定為 1.0)
+            if backend_name == "gemini-watermark":
+                strength = 1.0
+            else:
+                strength = self._select_strength()
+                if strength is None:
+                    # 返回步驟 3
+                    model = None
+                    backend_name = None
+                    continue
 
-        # 建立設定
-        config = ProcessConfig(
-            input_folder=folder,
-            backend_name=backend_name,
-            model=model,
-            strength=strength,
-        )
+            # 建立設定
+            config = ProcessConfig(
+                input_folder=folder,
+                backend_name=backend_name,
+                model=model,
+                strength=strength,
+            )
 
-        # 確認設定
-        if not self._confirm_settings(config):
-            return None
+            # 確認設定
+            confirmed = self._confirm_settings(config)
+            if confirmed is None:
+                # 返回步驟 4
+                strength = None
+                model = None
+                backend_name = None
+                continue
+            if not confirmed:
+                return None
 
-        return config
+            return config
+
+        return None
 
     def _show_welcome(self) -> None:
         """顯示歡迎畫面"""
@@ -75,15 +111,14 @@ class InteractiveUI:
             f"支援的圖片格式: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
         )
         self._console.write_line("輸出格式: PNG (保留透明通道)")
+        self._console.write_line("\n提示: 任何步驟輸入 'b' 可返回上一步")
 
     def _select_folder(self) -> Path | None:
         """
         選擇資料夾
 
-        若有歷史記錄，顯示列表讓使用者選擇；否則直接輸入路徑。
-
         Returns:
-            資料夾路徑，若無效則返回 None
+            資料夾路徑，若無效或取消則返回 None
         """
         self._console.print_section("【步驟 1/4】選擇圖片資料夾")
 
@@ -108,12 +143,14 @@ class InteractiveUI:
             history: 歷史路徑列表
 
         Returns:
-            選擇的資料夾路徑，若無效則返回 None
+            選擇的資料夾路徑，若無效或返回則為 None
         """
         options = [str(p) for p in history] + ["輸入新路徑"]
-        choice = self._console.get_choice("最近使用的路徑:", options, default=1)
+        choice = self._console.get_choice(
+            "最近使用的路徑:", options, default=1, allow_back=False
+        )
 
-        if choice == len(options):
+        if choice is None or choice == len(options):
             return self._input_new_folder()
 
         return self._validate_folder(history[choice - 1])
@@ -126,7 +163,12 @@ class InteractiveUI:
             資料夾路徑，若無效則返回 None
         """
         while True:
-            folder_path = self._console.get_input("請輸入資料夾路徑")
+            folder_path = self._console.get_input(
+                "請輸入資料夾路徑 (b 取消)"
+            )
+
+            if folder_path.lower() in ("b", "back", "返回"):
+                return None
 
             if not folder_path:
                 self._console.write_line("路徑不能為空")
@@ -172,23 +214,28 @@ class InteractiveUI:
         self._console.write_line(f"\n找到 {image_count} 張圖片")
         return folder
 
-    def _select_backend(self) -> str:
+    def _select_backend(self) -> str | None:
         """
         選擇後端
 
         Returns:
-            後端名稱
+            後端名稱，若返回上一步則為 None
         """
         self._console.print_section("【步驟 2/4】選擇背景移除方案")
 
         backends = BackendRegistry.list_backends()
         options = [f"{b.name}: {b.description}" for b in backends]
 
-        choice = self._console.get_choice("請選擇背景移除方案:", options, default=1)
+        choice = self._console.get_choice(
+            "請選擇背景移除方案:", options, default=1, allow_back=True
+        )
+
+        if choice is None:
+            return None
 
         return backends[choice - 1].name
 
-    def _select_model(self, backend_name: str) -> str:
+    def _select_model(self, backend_name: str) -> str | None:
         """
         選擇模型
 
@@ -196,7 +243,7 @@ class InteractiveUI:
             backend_name: 後端名稱
 
         Returns:
-            模型名稱
+            模型名稱，若返回上一步則為 None
         """
         self._console.print_section("【步驟 3/4】選擇模型")
 
@@ -215,7 +262,12 @@ class InteractiveUI:
         else:
             options = self._get_backgroundremover_model_options(models)
 
-        choice = self._console.get_choice("請選擇模型:", options, default=1)
+        choice = self._console.get_choice(
+            "請選擇模型:", options, default=1, allow_back=True
+        )
+
+        if choice is None:
+            return None
 
         return models[choice - 1]
 
@@ -273,12 +325,12 @@ class InteractiveUI:
         }
         return [f"{m}: {descriptions.get(m, m)}" for m in models]
 
-    def _select_strength(self) -> float:
+    def _select_strength(self) -> float | None:
         """
         選擇去背強度
 
         Returns:
-            強度值 (0.1-1.0)
+            強度值 (0.1-1.0)，若返回上一步則為 None
         """
         self._console.print_section("【步驟 4/4】設定去背強度")
 
@@ -289,9 +341,26 @@ class InteractiveUI:
             "  - 較高 (0.7-1.0): 積極去背，邊緣更乾淨但可能損失細節"
         )
 
-        return self._console.get_number("\n去背強度", 0.1, 1.0, 0.5)
+        while True:
+            value = input(
+                f"\n去背強度 [{MIN_STRENGTH}-{MAX_STRENGTH}] "
+                f"(預設: {DEFAULT_STRENGTH}, b 返回): "
+            ).strip()
+            if value.lower() in ("b", "back", "返回"):
+                return None
+            if not value:
+                return DEFAULT_STRENGTH
+            try:
+                num = float(value)
+                if MIN_STRENGTH <= num <= MAX_STRENGTH:
+                    return num
+                self._console.write_line(
+                    f"請輸入 {MIN_STRENGTH} 到 {MAX_STRENGTH} 之間的數值"
+                )
+            except ValueError:
+                self._console.write_line("請輸入有效的數字")
 
-    def _confirm_settings(self, config: ProcessConfig) -> bool:
+    def _confirm_settings(self, config: ProcessConfig) -> bool | None:
         """
         確認設定
 
@@ -299,7 +368,7 @@ class InteractiveUI:
             config: 處理設定
 
         Returns:
-            是否確認
+            是否確認，None 表示返回上一步
         """
         self._console.write_line("\n" + "=" * 60)
         self._console.write_line("確認設定")
@@ -312,7 +381,15 @@ class InteractiveUI:
         self._console.write_line(f"  輸出:   {output_folder}")
         self._console.write_line("")
 
-        return self._console.confirm("確定開始處理?")
+        while True:
+            response = input("確定開始處理? [Y/n/b]: ").strip().lower()
+            if not response or response in ("y", "yes", "是"):
+                return True
+            if response in ("n", "no", "否"):
+                return False
+            if response in ("b", "back", "返回"):
+                return None
+            self._console.write_line("請輸入 y (確定), n (取消), 或 b (返回)")
 
     def show_result(self, result: ProcessResult) -> None:
         """
@@ -335,6 +412,11 @@ class InteractiveUI:
         """顯示取消訊息"""
         self._console.write_line("\n已取消")
 
-    def wait_for_exit(self) -> None:
-        """等待退出"""
-        self._console.wait_for_key("按 Enter 結束...")
+    def ask_continue(self) -> bool:
+        """
+        詢問是否繼續處理
+
+        Returns:
+            True 繼續，False 退出
+        """
+        return self._console.confirm("\n是否繼續處理其他圖片?", default=True)
