@@ -46,8 +46,11 @@ class InteractiveUI:
         # 步驟 3: 選擇模型
         model = self._select_model(backend_name)
 
-        # 步驟 4: 設定強度
-        strength = self._select_strength()
+        # 步驟 4: 設定強度 (gemini-watermark 固定為 1.0)
+        if backend_name == "gemini-watermark":
+            strength = 1.0
+        else:
+            strength = self._select_strength()
 
         # 建立設定
         config = ProcessConfig(
@@ -207,6 +210,8 @@ class InteractiveUI:
             options = self._get_transparent_bg_mode_options(models)
         elif backend_name == "greenscreen":
             options = self._get_greenscreen_mode_options(models)
+        elif backend_name == "gemini-watermark":
+            options = self._get_gemini_watermark_mode_options(models)
         else:
             options = self._get_backgroundremover_model_options(models)
 
@@ -254,6 +259,17 @@ class InteractiveUI:
             "hybrid": "混合模式 - 色度鍵+AI+Despill，效果最好 (推薦)",
             "chroma-only": "純色度鍵 - 速度最快，適合純色綠幕",
             "ai-enhanced": "AI增強 - 色度鍵+AI，保留原始色彩",
+        }
+        return [f"{m}: {descriptions.get(m, m)}" for m in models]
+
+    def _get_gemini_watermark_mode_options(
+        self, models: list[str]
+    ) -> list[str]:
+        """取得 Gemini 浮水印移除模式選項"""
+        descriptions = {
+            "auto": "自動偵測 - 依圖片尺寸自動選擇浮水印大小 (推薦)",
+            "48px": "48×48 模式 - 強制使用小尺寸浮水印模式",
+            "96px": "96×96 模式 - 強制使用大尺寸浮水印模式",
         }
         return [f"{m}: {descriptions.get(m, m)}" for m in models]
 

@@ -5,6 +5,7 @@
 """
 
 from .backgroundremover import BackgroundRemoverBackend
+from .gemini_watermark import GeminiWatermarkBackend
 from .greenscreen import GreenScreenBackend
 from .registry import BackendRegistry
 from .rembg import RembgBackend
@@ -17,4 +18,5 @@ __all__ = [
     "TransparentBgBackend",
     "BackgroundRemoverBackend",
     "GreenScreenBackend",
+    "GeminiWatermarkBackend",
 ]
