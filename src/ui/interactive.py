@@ -11,6 +11,7 @@ from src.backends.registry import BackendRegistry
 from src.core.models import SUPPORTED_EXTENSIONS, ProcessConfig, ProcessResult
 
 from .console import Console
+from .history import PathHistory
 
 
 class InteractiveUI:
@@ -23,6 +24,7 @@ class InteractiveUI:
     def __init__(self) -> None:
         """初始化 UI"""
         self._console = Console()
+        self._history = PathHistory()
 
     def run(self) -> ProcessConfig | None:
         """
@@ -75,11 +77,51 @@ class InteractiveUI:
         """
         選擇資料夾
 
+        若有歷史記錄，顯示列表讓使用者選擇；否則直接輸入路徑。
+
         Returns:
             資料夾路徑，若無效則返回 None
         """
         self._console.print_section("【步驟 1/4】選擇圖片資料夾")
 
+        history = self._history.load()
+
+        if history:
+            folder = self._select_from_history(history)
+        else:
+            folder = self._input_new_folder()
+
+        if folder is None:
+            return None
+
+        self._history.save(folder)
+        return folder
+
+    def _select_from_history(self, history: list[Path]) -> Path | None:
+        """
+        從歷史記錄中選擇路徑
+
+        Args:
+            history: 歷史路徑列表
+
+        Returns:
+            選擇的資料夾路徑，若無效則返回 None
+        """
+        options = [str(p) for p in history] + ["輸入新路徑"]
+        choice = self._console.get_choice("最近使用的路徑:", options, default=1)
+
+        if choice == len(options):
+            return self._input_new_folder()
+
+        return self._validate_folder(history[choice - 1])
+
+    def _input_new_folder(self) -> Path | None:
+        """
+        手動輸入新資料夾路徑
+
+        Returns:
+            資料夾路徑，若無效則返回 None
+        """
         while True:
             folder_path = self._console.get_input("請輸入資料夾路徑")
 
@@ -88,31 +130,44 @@ class InteractiveUI:
                 continue
 
             folder = Path(folder_path).expanduser().resolve()
+            result = self._validate_folder(folder)
+            if result is not None:
+                return result
 
-            if not folder.exists():
-                self._console.write_line(f"錯誤: 資料夾不存在 - {folder}")
-                continue
+    def _validate_folder(self, folder: Path) -> Path | None:
+        """
+        驗證資料夾路徑
 
-            if not folder.is_dir():
-                self._console.write_line(f"錯誤: 路徑不是資料夾 - {folder}")
-                continue
+        Args:
+            folder: 資料夾路徑
 
-            # 掃描圖片
-            image_count = sum(
-                1
-                for f in folder.iterdir()
-                if f.is_file() and f.suffix.lower() in SUPPORTED_EXTENSIONS
+        Returns:
+            驗證通過的路徑，驗證失敗返回 None
+        """
+        if not folder.exists():
+            self._console.write_line(f"錯誤: 資料夾不存在 - {folder}")
+            return None
+
+        if not folder.is_dir():
+            self._console.write_line(f"錯誤: 路徑不是資料夾 - {folder}")
+            return None
+
+        # 掃描圖片
+        image_count = sum(
+            1
+            for f in folder.iterdir()
+            if f.is_file() and f.suffix.lower() in SUPPORTED_EXTENSIONS
+        )
+
+        if image_count == 0:
+            self._console.write_line("錯誤: 資料夾中沒有找到支援的圖片檔案")
+            self._console.write_line(
+                f"支援的格式: {', '.join(SUPPORTED_EXTENSIONS)}"
             )
+            return None
 
-            if image_count == 0:
-                self._console.write_line("錯誤: 資料夾中沒有找到支援的圖片檔案")
-                self._console.write_line(
-                    f"支援的格式: {', '.join(SUPPORTED_EXTENSIONS)}"
-                )
-                continue
-
-            self._console.write_line(f"\n找到 {image_count} 張圖片")
-            return folder
+        self._console.write_line(f"\n找到 {image_count} 張圖片")
+        return folder
 
     def _select_backend(self) -> str:
         """
