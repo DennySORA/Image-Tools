@@ -94,6 +94,7 @@ max-complexity = 10
 "src/common/preset_config.py" = ["T201"]  # Allow print in preset comparison display
 "test_presets.py" = ["T201", "PLC0415"]  # Allow print and local imports in test script
 "test_cuda.py" = ["T201"]  # Allow print in CUDA test script
+"example_preset_usage.py" = ["T201", "PLR0915"]  # Allow print and many statements in example script
 "src/features/background_removal/portrait_matting.py" = ["PLC0415", "TRY300"]  # Allow dynamic imports for optional dependencies
 "src/features/background_removal/ultra.py" = ["PLC0415"]  # Allow local imports in classmethod
 
