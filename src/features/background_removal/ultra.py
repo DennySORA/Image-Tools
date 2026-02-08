@@ -284,7 +284,9 @@ class UltraBackend(BaseBackend):
         alpha_normalized = alpha.astype(np.float32) / PIXEL_MAX_VALUE
 
         # 找出邊緣區域（半透明像素）
-        edge_mask = (alpha_normalized > EDGE_ALPHA_MIN) & (alpha_normalized < EDGE_ALPHA_MAX)
+        edge_mask = (alpha_normalized > EDGE_ALPHA_MIN) & (
+            alpha_normalized < EDGE_ALPHA_MAX
+        )
 
         if not np.any(edge_mask):
             return image
@@ -377,11 +379,15 @@ class UltraBackend(BaseBackend):
 
         elif self.color_filter.color == ColorFilter.BLACK:
             l_channel = lab[:, :, 0]
-            color_mask = (l_channel < BLACK_THRESHOLD).astype(np.uint8) * PIXEL_MAX_VALUE
+            color_mask = (l_channel < BLACK_THRESHOLD).astype(
+                np.uint8
+            ) * PIXEL_MAX_VALUE
 
         elif self.color_filter.color == ColorFilter.WHITE:
             l_channel = lab[:, :, 0]
-            color_mask = (l_channel > WHITE_THRESHOLD).astype(np.uint8) * PIXEL_MAX_VALUE
+            color_mask = (l_channel > WHITE_THRESHOLD).astype(
+                np.uint8
+            ) * PIXEL_MAX_VALUE
 
         else:
             return alpha
