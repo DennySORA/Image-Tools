@@ -1,0 +1,26 @@
+commit c2fffe5bbc98e3a6dd8341eec2f26e670626329c
+Author:     DennySORA <dennysora.main@gmail.com>
+AuthorDate: Sun Feb 8 21:06:36 2026 +0800
+Commit:     DennySORA <dennysora.main@gmail.com>
+CommitDate: Sun Feb 8 21:06:36 2026 +0800
+
+    refactor(stage-3): extract common code and eliminate duplication
+    
+        - Create src/common/ for shared code
+        - Extract ColorFilter and ColorFilterConfig to src/common/color_filter.py
+        - Consolidate duplicate ColorFilter enums from ultra.py and unified.py
+        - Use Pydantic BaseModel for ColorFilterConfig (was dataclass)
+        - Add StrEnum for ColorFilter (Python 3.11+ feature)
+        - Merge all ColorFilterConfig fields (hue_range, value_range, saturation_min)
+        - Update imports in ultra.py, unified.py, and main.py to use common
+        - Remove ~40 lines of duplicated code
+        - All 44 tests passing, 20 skipped (network/model access)
+        - Quality gates: mypy ✓ (0 errors), ruff ✓, tests ✓
+    
+        Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
+
+M	main.py
+M	src/backends/ultra.py
+M	src/backends/unified.py
+A	src/common/__init__.py
+A	src/common/color_filter.py

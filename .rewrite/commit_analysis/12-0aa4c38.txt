@@ -1,0 +1,19 @@
+commit 0aa4c384c59082c44f9e190a24be828089beecf8
+Author:     DennySORA <dennysora.main@gmail.com>
+AuthorDate: Sun Feb 8 19:29:55 2026 +0800
+Commit:     DennySORA <dennysora.main@gmail.com>
+CommitDate: Sun Feb 8 19:29:55 2026 +0800
+
+    test: add sprite sheet generator and test images
+    
+        Generate test images for sprite splitting validation:
+        - simple_sprites.png: 4 colored circles
+        - complex_sprites.png: various shapes (circles, rectangles, stars)
+        - merged_sprites.png: low-alpha connected objects for smart threshold testing
+    
+        Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
+
+A	test_images/complex_sprites.png
+A	test_images/merged_sprites.png
+A	test_images/simple_sprites.png
+A	tests/test_sprite_generator.py

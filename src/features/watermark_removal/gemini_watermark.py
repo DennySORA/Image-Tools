@@ -27,6 +27,8 @@ logger = logging.getLogger(__name__)
 ALPHA_THRESHOLD: float = 0.002  # 忽略極小的 alpha 值 (雜訊)
 MAX_ALPHA: float = 0.99  # 避免除以接近零的值
 LOGO_VALUE: int = 255  # 白色浮水印參考值
+MIN_PIXEL_CHANNELS: int = 3  # RGB 最小通道數
+MIN_ALPHA_CHANNELS: int = 4  # RGBA 最小通道數
 
 # 參考圖片目錄
 ASSETS_DIR: Path = Path(__file__).parent / "assets"
@@ -196,7 +198,8 @@ def _remove_watermark(
                 # 同時還原 alpha 通道
                 # 浮水印公式: wm_a = α × 255 + (1 - α) × orig_a
                 # 反向: orig_a = (wm_a - α × 255) / (1 - α)
-                assert isinstance(px, (tuple, list)) and len(px) > 3  # type guard
+                if not isinstance(px, (tuple, list)) or len(px) <= MIN_PIXEL_CHANNELS:
+                    continue
                 orig_alpha = (px[3] - wm_alpha * LOGO_VALUE) / one_minus_alpha
                 blended_alpha = (
                     px[3] * (1.0 - params.strength) + orig_alpha * params.strength

@@ -1,7 +1,7 @@
 [project]
-name = "rembg-tool"
-version = "0.1.0"
-description = "Add your description here"
+name = "image-tools"
+version = "1.0.0"
+description = "A comprehensive, production-grade image processing toolkit with AI-powered background removal, watermark removal, and intelligent image splitting"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [

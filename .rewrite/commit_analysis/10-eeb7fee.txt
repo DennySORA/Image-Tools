@@ -1,0 +1,22 @@
+commit eeb7fee1965316c26ee970d9b64c4d9663e6bba5
+Author:     DennySORA <dennysora.main@gmail.com>
+AuthorDate: Sun Feb 8 19:28:16 2026 +0800
+Commit:     DennySORA <dennysora.main@gmail.com>
+CommitDate: Sun Feb 8 19:28:16 2026 +0800
+
+    feat(utils): add image splitter module
+    
+        Add comprehensive image splitting functionality with:
+        - Alpha-channel based connected component detection
+        - Union-Find data structure for efficient grouping
+        - Smart threshold selection algorithm
+        - Geometry utilities (BBox with overlap/union operations)
+        - Multiple canvas modes (max/tight/original/fixed)
+        - Configurable noise filtering and object merging
+    
+        Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
+
+A	src/utils/__init__.py
+A	src/utils/geometry.py
+A	src/utils/splitter.py
+A	src/utils/union_find.py

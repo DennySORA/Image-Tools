@@ -1,31 +1,43 @@
 [繁體中文](docs/README.zh-TW.md) | [简体中文](docs/README.zh-CN.md) | [日本語](docs/README.ja.md)
 
-# Remove Background
+# Image-Tools
 
-A powerful, production-grade tool for removing image backgrounds using state-of-the-art AI technology. Features a unified SOTA backend with multi-stage processing for professional-quality edge handling.
+A comprehensive, production-grade image processing toolkit powered by state-of-the-art AI technology. Perform professional background removal, watermark removal, and intelligent image splitting with complete privacy and control.
 
-## ✨ Highlights
+## ✨ Key Features
 
-🏆 **Ultra Backend (NEW!)** - Maximum quality with BRIA RMBG-2.0 (non-commercial)
-🎯 **Unified SOTA Backend** - Best-in-class with BiRefNet-massive (MIT, commercial OK)
-🔬 **Advanced Processing** - Trimap Refinement → Multi-space Defringing
-🎨 **Pure Color Optimization** - Special handling for green/white/black backgrounds
-💪 **Controllable Strength** - Fine-tune removal aggressiveness (0.1-1.0)
-🚀 **Batch Processing** - Handle entire folders efficiently
-🔒 **100% Local** - No API calls, complete privacy
-📦 **Flexible Licensing** - MIT (commercial) or CC BY-NC (ultimate quality)
+### 🎯 Background Removal
+- **Ultra Backend** - Maximum quality with BRIA RMBG-2.0 (non-commercial)
+- **Unified Backend** - Commercial-ready with BiRefNet-massive (MIT)
+- **Advanced Processing** - Trimap refinement, multi-space defringing
+- **Color Optimization** - Special handling for green/white/black backgrounds
+- **Controllable Strength** - Fine-tune removal aggressiveness (0.1-1.0)
 
-## Installation
+### 🌊 Watermark Removal
+- **Gemini Watermark Remover** - Remove Google Gemini AI watermarks
+- **Reverse Alpha Blending** - Mathematical precision removal
+- **Auto Detection** - Automatic watermark size detection (48px/96px)
+- **Adjustable Strength** - Partial or complete removal
+
+### ✂️ Image Splitting
+- **Smart Grid Layout** - Automatic optimal grid calculation
+- **Custom Arrangements** - Flexible rows × columns configuration
+- **Quality Preservation** - No compression, lossless splitting
+- **Batch Processing** - Split multiple images at once
+
+## 🚀 Quick Start
+
+### Installation
 
 Requirements: Python 3.13+ and `uv` package manager
 
 ```bash
-git clone <repository-url>
-cd Remove-Background
+git clone https://github.com/yourusername/Image-Tools.git
+cd Image-Tools
 uv sync
 ```
 
-## Quick Start
+### Run
 
 ```bash
 uv run main.py
@@ -34,52 +46,48 @@ uv run main.py
 Follow the interactive prompts:
 1. **Select Folder** - Choose input directory
 2. **Select Operation** - Background removal, watermark removal, or image splitting
-3. **Configure Settings** - Adjust strength and optional color filter
-4. **Process** - Sit back while the tool processes all images
+3. **Configure Settings** - Adjust parameters for your use case
+4. **Process** - Let the tool handle the rest
 
-Output images are saved as transparent PNGs in `<input-folder>/output/`
+Output files are saved in `<input-folder>/output/`
 
-## 🎯 Background Removal Backends
+## 📚 Features In-Depth
 
-### Which Backend to Use?
+### Background Removal
+
+#### Which Backend to Use?
 
 | Backend | Quality | Speed | License | Best For |
 |---------|---------|-------|---------|----------|
-| **Ultra** ⭐⭐⭐⭐⭐ | Extreme | Medium | **Non-commercial** | Personal use, maximum quality |
-| **Unified** ⭐⭐⭐⭐ | Excellent | Fast | **MIT (commercial OK)** | Commercial projects, general use |
+| **Ultra** ⭐⭐⭐⭐⭐ | Extreme | Medium | **Non-commercial** | Personal projects, maximum quality |
+| **Unified** ⭐⭐⭐⭐ | Excellent | Fast | **MIT (commercial OK)** | Commercial projects, production use |
 
-### Ultra Backend (Maximum Quality)
+#### Ultra Backend (Maximum Quality)
 
 **⚠️ Non-commercial use only (CC BY-NC 4.0)**
 
 The ultimate solution for personal users seeking the absolute best quality:
 
-#### Features
-- **BRIA RMBG-2.0**: Professional-grade model with superior training data
-- **Trimap Refinement**: Intelligent boundary processing (preserves details)
-- **Multi-space Defringing**: RGB + LAB + HSV color analysis
-- **Guided Filter**: Edge-aware smoothing (better than Gaussian blur)
-- **Color Filter** (Optional): Optimized for pure-color backgrounds
+**Features:**
+- **BRIA RMBG-2.0** - Professional-grade model with superior training data
+- **Trimap Refinement** - Intelligent boundary processing (preserves details)
+- **Multi-space Defringing** - RGB + LAB + HSV color analysis
+- **Guided Filter** - Edge-aware smoothing (better than Gaussian blur)
+- **Color Filter** - Optimized for pure-color backgrounds
 
-[📚 Full Ultra Backend Documentation](docs/ULTRA_BACKEND.md)
-
----
-
-### Unified Backend (Commercial-Friendly)
+#### Unified Backend (Commercial-Friendly)
 
 **✅ MIT License - Commercial use OK**
 
 Balanced solution combining quality and flexibility:
 
-#### Features
-- **BiRefNet-massive**: SOTA segmentation with excellent edge preservation
-- **Alpha Matting**: Automatic refinement for complex edges
-- **Edge Defringing**: Removes color contamination
-- **Color Filter** (Optional): Pure-color background optimization
+**Features:**
+- **BiRefNet-massive** - SOTA segmentation with excellent edge preservation
+- **Alpha Matting** - Automatic refinement for complex edges
+- **Edge Defringing** - Removes color contamination
+- **Color Filter** - Pure-color background optimization
 
-[📚 Full Unified Backend Documentation](docs/UNIFIED_BACKEND.md)
-
-### Recommended Settings
+#### Recommended Settings
 
 | Scenario | Strength | Color Filter |
 |----------|----------|--------------|
@@ -89,38 +97,39 @@ Balanced solution combining quality and flexibility:
 | White background (product) | 0.7-0.9 | White |
 | Black background (studio) | 0.7-0.9 | Black |
 
-### When to Enable Color Filter?
+### Watermark Removal
 
-✅ **Enable** for:
-- Green screen photography/video
-- Product photography (pure white/black background)
-- ID photos (solid color background)
+Remove Google Gemini AI watermarks using reverse alpha blending algorithm.
 
-❌ **Disable** for:
-- Natural scenes (complex backgrounds)
-- Gradient backgrounds
-- Mixed backgrounds
+**Features:**
+- **Automatic Detection** - Auto-detect watermark size based on image dimensions
+- **Manual Override** - Force 48px or 96px mode if needed
+- **Strength Control** - Adjust removal intensity (0.1-1.0)
+- **Precision Algorithm** - Mathematical reverse alpha blending
 
-## Key Features
+**Detection Rules:**
+- Images > 1024×1024 pixels → 96×96 watermark
+- Images ≤ 1024×1024 pixels → 48×48 watermark
 
-- **State-of-the-Art Quality**: BiRefNet-massive model outperforms traditional methods
-- **Smart Edge Handling**: Alpha matting preserves fine details like hair and fur
-- **No More Fringing**: Automatic edge decontamination removes color spill
-- **Batch Processing**: Process entire folders with progress feedback
-- **Flexible Control**: Adjustable strength from conservative to aggressive
-- **Multiple Operations**: Background removal, watermark removal, image splitting
-- **User-Friendly UI**: Modern interactive CLI with ESC navigation support
+### Image Splitting
 
-## 📚 Documentation
+Split large images into smaller tiles with intelligent layout.
 
-- **[🏆 Ultra Backend Guide](docs/ULTRA_BACKEND.md)** - Maximum quality (non-commercial)
-- **[Unified Backend Guide](docs/UNIFIED_BACKEND.md)** - Commercial-friendly solution
-- **[Migration Guide](docs/MIGRATION_GUIDE.md)** - Upgrading from old backends
-- **[ESC Key Navigation Fix](docs/ESC_KEY_FIX.md)** - Troubleshooting UI navigation
+**Features:**
+- **Smart Grid** - Auto-calculate optimal rows × columns
+- **Custom Layout** - Specify exact grid configuration
+- **Quality Preservation** - Lossless PNG output
+- **Batch Processing** - Process multiple images
+
+**Use Cases:**
+- Social media carousels (Instagram, Twitter)
+- Print layouts and posters
+- Game tile maps
+- Large artwork segmentation
 
 ## 🔧 Technical Details
 
-### Processing Pipeline
+### Processing Pipeline (Background Removal)
 
 ```
 Input Image
@@ -147,9 +156,9 @@ Output PNG (RGBA)
 ### Performance
 
 - **Single Image**: 2-5 seconds (depends on resolution and hardware)
-- **Memory Usage**: ~3-4GB GPU (BiRefNet-massive)
+- **Memory Usage**: ~3-4GB GPU (BiRefNet-massive), ~2GB CPU
 - **Batch Processing**: Efficient session reuse
-- **Quality**: Comparable to or better than commercial services (e.g., remove.bg)
+- **Quality**: Comparable to or better than commercial services
 
 ### Hardware Requirements
 
@@ -161,41 +170,60 @@ Output PNG (RGBA)
 
 ## 🆚 Comparison
 
-| Feature | remove.bg | **Ultra Backend** | Unified Backend |
-|---------|-----------|-------------------|-----------------|
-| License | Commercial (paid) | **Non-commercial (free)** | MIT (free, commercial) |
-| Quality | Excellent | **⭐⭐⭐⭐⭐ Extreme** | ⭐⭐⭐⭐ Excellent |
-| Edge Detail | Good | **⭐⭐⭐⭐⭐ Extreme** | ⭐⭐⭐⭐ Excellent |
-| Processing | RGB + LAB | **RGB + LAB + HSV** | RGB + LAB |
-| Trimap Refinement | ❌ | **✅ Complete** | ❌ |
-| Privacy | ❌ Upload required | **✅ 100% local** | ✅ 100% local |
-| Customization | ❌ No control | **✅ Full control** | ✅ Strength + filter |
-| Cost | $0.20+/image | **Free (hardware)** | Free (hardware) |
-| Best For | Quick API use | **Personal, max quality** | Commercial projects |
+| Feature | Commercial Tools | **Image-Tools** |
+|---------|------------------|-----------------|
+| Privacy | ❌ Upload required | ✅ 100% local |
+| Customization | ❌ Limited control | ✅ Full control |
+| Cost | 💰 $0.20+/image | ✅ Free (hardware only) |
+| Quality | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
+| Features | Background removal only | ✅ Multi-tool suite |
+| License | Proprietary | ✅ MIT (main), CC BY-NC (Ultra) |
 
-## External Dependencies (Third-Party)
+## 📦 Dependencies
 
-- **rembg** (MIT) — Includes BiRefNet models for background removal
-- **transparent-background** (MIT) — Alternative background removal option
-- **backgroundremover** (MIT) — Alternative background removal option
+All dependencies are open-source with permissive licenses:
+
+- **rembg** (MIT) — BiRefNet models for background removal
+- **transformers** (Apache 2.0) — HuggingFace transformers for BRIA RMBG-2.0
 - **onnxruntime** (MIT) — Runtime support for ONNX models
-- **pillow** (HPND) — Image reading and writing utilities
+- **pillow** (HPND) — Image processing utilities
 - **opencv-python** (Apache 2.0) — Computer vision operations
 - **InquirerPy** (MIT) — Interactive CLI interface
-- **moviepy** (MIT) — Media utility library
-
-All dependencies are open-source with permissive licenses.
+- **torch** (BSD-3) — PyTorch deep learning framework
+- **numpy** (BSD-3) — Numerical computing
 
 ## 🙏 Acknowledgments
 
 This project builds upon excellent open-source work:
 
 - **BiRefNet** by [ZhengPeng7](https://github.com/ZhengPeng7/BiRefNet) - SOTA segmentation
+- **BRIA RMBG-2.0** by [BRIA AI](https://huggingface.co/briaai/RMBG-2.0) - Professional-grade model
 - **Rembg** by [danielgatis](https://github.com/danielgatis/rembg) - Background removal toolkit
+- **Gemini Watermark Remover** by [journey-ad](https://github.com/journey-ad/gemini-watermark-remover) - Watermark removal algorithm
 - **Cloudflare** - For [evaluating and recommending BiRefNet](https://blog.cloudflare.com/background-removal-with-workers-ai/)
 
 ## 📄 License
 
-MIT License - See [LICENSE](LICENSE) for details
+**MIT License** - See [LICENSE](LICENSE) for details
 
-**Commercial use is fully allowed and encouraged.**
+**Commercial use is fully allowed and encouraged** (except Ultra backend which requires non-commercial license).
+
+### Ultra Backend License
+
+The Ultra backend uses BRIA RMBG-2.0 which is licensed under **CC BY-NC 4.0** (non-commercial). If you plan to use the Ultra backend commercially, please contact BRIA AI for licensing.
+
+## 🌟 Star History
+
+If you find this project useful, please consider giving it a star ⭐
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## 📧 Contact
+
+For questions, issues, or feature requests, please open an issue on GitHub.
+
+---
+
+**Made with ❤️ for the open-source community**

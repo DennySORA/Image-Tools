@@ -1,0 +1,16 @@
+commit 91d50407a912d114a322a3e2a28d3b8cc11f2aeb
+Author:     DennySORA <denny_lee@trendmicro.com>
+AuthorDate: Thu Dec 11 14:31:19 2025 +0800
+Commit:     DennySORA <denny_lee@trendmicro.com>
+CommitDate: Thu Dec 11 14:31:19 2025 +0800
+
+    fix(backends): save transparent-background output as PNG
+    
+        - What: force `TransparentBgBackend` to save outputs as PNG to preserve transparency.
+        - What: update `README.md` documentation for usage and backend options (including green-screen guidance).
+        - Why: ensure transparent-background outputs reliably retain alpha and update usage docs.
+    
+        Tests: not run (not provided)
+
+M	README.md
+M	src/backends/transparent_bg.py

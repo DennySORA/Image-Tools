@@ -1,0 +1,23 @@
+commit 9da25b03658cd17853c2e65ee0fb0a12353ff292
+Author:     DennySORA <dennysora.main@gmail.com>
+AuthorDate: Sun Feb 8 21:17:49 2026 +0800
+Commit:     DennySORA <dennysora.main@gmail.com>
+CommitDate: Sun Feb 8 21:17:49 2026 +0800
+
+    refactor(stage-6): enhance SOLID principles and dependency injection
+    
+        - Create ApplicationService to orchestrate app logic (SRP)
+        - Refactor main.py to use dependency injection pattern
+        - Extract business logic from main() into ApplicationService
+        - Make UI and BackendRegistry injectable dependencies (DIP)
+        - Separate concerns: main.py (entry point) vs app.py (orchestration)
+        - Improve testability with explicit dependencies
+        - Apply factory pattern for backend creation
+        - Reduce main.py from 94 to 34 lines
+        - All 44 tests passing, 20 skipped (network/model access)
+        - Quality gates: mypy ✓ (0 errors), tests ✓
+    
+        Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
+
+M	main.py
+A	src/app.py

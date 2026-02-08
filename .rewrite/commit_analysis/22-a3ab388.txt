@@ -1,0 +1,24 @@
+commit a3ab3889d00be8a596890a443cdf707be45444ba
+Author:     DennySORA <dennysora.main@gmail.com>
+AuthorDate: Sun Feb 8 19:59:12 2026 +0800
+Commit:     DennySORA <dennysora.main@gmail.com>
+CommitDate: Sun Feb 8 19:59:12 2026 +0800
+
+    fix: ui): improve ESC key navigation with multiple fixes
+    
+    **Modified files**:
+    - `src/ui/modern.py`
+    
+    **Details**:
+    - 1. 🔄 修復遞迴呼叫問題 - _select_folder 改用 while 迴圈
+    - 之前在輸入自訂路徑時使用遞迴 return self._select_folder()
+    - 現在使用 continue 重新進入迴圈，避免堆疊溢位
+    - 2. ⬅️  新增「返回上一步」選項作為備選方案
+    - 在操作選擇、後端選擇、模型選擇中加入明確的返回選項
+    - 如果終端機不支援 ESC 鍵，使用者可以選擇此選項
+    - 在每個步驟顯示「✅ 已選擇...」訊息
+    - ESC 按下時顯示「🔙 ESC 已按下 - 返回...」訊息
+    
+    Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
+
+M	src/ui/modern.py

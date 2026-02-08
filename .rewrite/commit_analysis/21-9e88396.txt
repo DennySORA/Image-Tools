@@ -1,0 +1,30 @@
+commit 9e8839636c6ceba1a106b9d66adc910cb9eebb73
+Author:     DennySORA <dennysora.main@gmail.com>
+AuthorDate: Sun Feb 8 19:52:33 2026 +0800
+Commit:     DennySORA <dennysora.main@gmail.com>
+CommitDate: Sun Feb 8 19:52:33 2026 +0800
+
+    fix(ui): properly implement ESC key navigation with nested loops
+    
+        Major ESC key fixes:
+        - ✅ Add mandatory=False to ALL inquirer prompts
+        - ✅ Wrap all prompts in try-except for KeyboardInterrupt
+        - ✅ Use nested while loops for proper multi-level navigation:
+          - Outer loop: folder selection
+          - Middle loop: operation selection
+          - Inner loop: backend configuration
+        - ✅ ESC at any step correctly returns to previous step
+        - ✅ ESC at first step exits program
+    
+        Navigation flow:
+          Folder → ESC → Exit
+          Operation → ESC → Back to Folder
+          Backend → ESC → Back to Operation
+          Model → ESC → Back to Backend
+          Strength → ESC → Back to Model
+    
+        Tested and verified working ✓
+    
+        Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
+
+M	src/ui/modern.py

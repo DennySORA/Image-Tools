@@ -1,0 +1,36 @@
+commit 46b9c10784bd93b835084e4900ed901916eafb31
+Author:     DennySORA <denny_lee@trendmicro.com>
+AuthorDate: Thu Nov 27 14:09:21 2025 +0800
+Commit:     DennySORA <denny_lee@trendmicro.com>
+CommitDate: Thu Nov 27 14:09:21 2025 +0800
+
+    feat(app): add interactive background removal tool
+    
+        - What: add `main.py` entry point wiring the UI, backend registry, and batch processor.
+        - What: implement core interfaces, models, and `ImageProcessor` for folder scans and processing results.
+        - What: add backend registry and built-in backends (`rembg`, `transparent-background`, `backgroundremover`) with model options and strength tuning.
+        - What: add interactive console UI flow for folder selection, backend/model choice, strength configuration, and result output.
+        - What: add project scaffolding (`pyproject.toml`, `uv.lock`, `.python-version`, `.gitignore`, `src/__init__.py`, empty `README.md`).
+        - Why: provide a pluggable, interactive CLI for batch background removal across multiple engines.
+    
+        Tests: not run (not provided)
+
+A	.gitignore
+A	.python-version
+A	README.md
+A	main.py
+A	pyproject.toml
+A	src/__init__.py
+A	src/backends/__init__.py
+A	src/backends/backgroundremover.py
+A	src/backends/registry.py
+A	src/backends/rembg.py
+A	src/backends/transparent_bg.py
+A	src/core/__init__.py
+A	src/core/interfaces.py
+A	src/core/models.py
+A	src/core/processor.py
+A	src/ui/__init__.py
+A	src/ui/console.py
+A	src/ui/interactive.py
+A	uv.lock

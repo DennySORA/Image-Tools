@@ -1,0 +1,22 @@
+commit aedd3f5097ae2686155892a787e47d022cb09cea
+Author:     DennySORA <denny_lee@trendmicro.com>
+AuthorDate: Thu Dec 11 14:24:58 2025 +0800
+Commit:     DennySORA <denny_lee@trendmicro.com>
+CommitDate: Thu Dec 11 14:24:58 2025 +0800
+
+    feat(backends): add greenscreen hybrid backend pipeline
+    
+        - What: add `src/backends/greenscreen.py` with hybrid/chroma-only/ai-enhanced modes using chroma key, rembg refinement, and despill.
+        - What: add `src/postprocess/green_screen.py` with `GreenScreenProcessor` and config for HSV masking, morphology, alpha merging, and despill.
+        - What: register `GreenScreenBackend` in `src/backends/__init__.py` and expose mode descriptions in `src/ui/interactive.py`.
+        - What: add `.DS_Store` to the repository root.
+        - Why: improve results for green-screen inputs by combining chroma keying with AI refinement and despill.
+    
+        Tests: not run (not provided)
+
+A	.DS_Store
+M	src/backends/__init__.py
+A	src/backends/greenscreen.py
+A	src/postprocess/__init__.py
+A	src/postprocess/green_screen.py
+M	src/ui/interactive.py

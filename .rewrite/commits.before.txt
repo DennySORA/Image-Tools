@@ -1,0 +1,38 @@
+46b9c10 2025-11-27 feat(app): add interactive background removal tool
+aedd3f5 2025-12-11 feat(backends): add greenscreen hybrid backend pipeline
+91d5040 2025-12-11 fix(backends): save transparent-background output as PNG
+daebad9 2025-12-27 docs: add multilingual usage-focused README
+19e20a8 2025-12-27 ci: enforce strict CI checks and typing
+a786050 2026-01-11 fix: import error
+4ac1c3b 2026-02-07 ci: update project
+0368aa8 2026-02-07 feat(backends): add Gemini watermark removal backend
+4d6217e 2026-02-08 feat(ui): add continuous loop and navigation support
+eeb7fee 2026-02-08 feat(utils): add image splitter module
+f88316f 2026-02-08 feat(backends): add image splitter backend
+0aa4c38 2026-02-08 test: add sprite sheet generator and test images
+5d2fae0 2026-02-08 test: validate image splitter functionality
+d192754 2026-02-08 docs: add comprehensive image splitter documentation
+5c59101 2026-02-08 docs: add integration completion summary
+e4c761c 2026-02-08 chore: clean up test files and organize project
+f79fa51 2026-02-08 feat(ui): add modern beautiful CLI interface with InquirerPy
+000ea43 2026-02-08 docs: restore accidentally deleted IMAGE_SPLITTER.md
+d98ce4e 2026-02-08 docs: add comprehensive new UI guide
+a84e5fd 2026-02-08 fix(ui): correct PathHistory method calls in ModernUI
+9e88396 2026-02-08 fix(ui): properly implement ESC key navigation with nested loops
+a3ab388 2026-02-08 fix: ui): improve ESC key navigation with multiple fixes
+77b5d80 2026-02-08 docs: add comprehensive ESC key fix documentation
+8cfa382 2026-02-08 feat(backend): add unified SOTA background removal solution
+55e3adf 2026-02-08 docs: update README with unified backend features
+d6721f0 2026-02-08 docs: add migration guide from old multi-backend system
+4fdb232 2026-02-08 feat(backend): add ultra backend with BRIA RMBG-2.0 for maximum quality
+e37bff8 2026-02-08 docs: update README to highlight ultra backend
+d7e5da8 2026-02-08 test: add comprehensive test suite with auto-generated images
+95d405f 2026-02-08 chore: remove old backends and UI, streamline project structure
+fbe7224 2026-02-08 chore(stage-0): establish baseline and install quality tools
+9b5a841 2026-02-08 chore(stage-1): pass mypy and ruff quality gates
+9f17535 2026-02-08 refactor(stage-2): introduce Pydantic models and BaseSettings
+c2fffe5 2026-02-08 refactor(stage-3): extract common code and eliminate duplication
+8a6a46b 2026-02-08 refactor(stage-4): introduce feature-based architecture
+2f7661b 2026-02-08 refactor(stage-5): document file length constraint for future work
+9da25b0 2026-02-08 refactor(stage-6): enhance SOLID principles and dependency injection
+179bdca 2026-02-08 refactor(stage-7): final cleanup and type strictness enforcement

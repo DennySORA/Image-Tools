@@ -1,0 +1,14 @@
+commit 6fc2e74e60640969013ae47391f35259d1166426
+Author:     DennySORA <dennysora.main@gmail.com>
+AuthorDate: Sun Feb 8 21:21:11 2026 +0800
+Commit:     DennySORA <dennysora.main@gmail.com>
+CommitDate: Sun Feb 8 21:21:11 2026 +0800
+
+    style(stage-7): apply ruff formatting and import cleanups
+    
+    - What: add a ruff per-file ignore for src/app.py to allow intentional user-facing prints.
+    - What: remove unused imports and reorder imports to satisfy ruff/isort across compatibility shims and features.
+    - What: apply small whitespace/formatting fixes (blank lines, __all__ blocks) for consistency.
+    - Why: keep the codebase clean under strict formatting and lint rules.
+    
+    Tests: not run (not provided)

@@ -34,6 +34,13 @@ logger = logging.getLogger(__name__)
 RemoveFunc = Callable[..., bytes]
 SessionFactory = Callable[[str], object]
 
+# 常數定義
+PIXEL_MAX_VALUE = 255
+BLACK_THRESHOLD = 30
+WHITE_THRESHOLD = 225
+EDGE_ALPHA_MIN = 0.01
+EDGE_ALPHA_MAX = 0.99
+
 
 @BackendRegistry.register("unified")
 class UnifiedBackend(BaseBackend):
@@ -58,7 +65,7 @@ class UnifiedBackend(BaseBackend):
 
     def __init__(
         self,
-        model: str = "auto",  # 保留 model 參數以符合介面，但內部固定使用 birefnet
+        model: str = "auto",  # noqa: ARG002
         strength: float = 0.7,
         color_filter: ColorFilterConfig | None = None,
     ):
@@ -66,7 +73,7 @@ class UnifiedBackend(BaseBackend):
         初始化統一後端
 
         Args:
-            model: 模型名稱（內部固定使用 birefnet-massive，此參數用於相容性）
+            model: 模型名稱（保留參數以符合介面，內部固定使用 birefnet-massive）
             strength: 處理強度 (0.1-1.0)
                      - 0.1-0.3: 保守模式，保留更多邊緣像素
                      - 0.4-0.7: 平衡模式（推薦）
@@ -204,12 +211,12 @@ class UnifiedBackend(BaseBackend):
         elif self.color_filter.color == ColorFilter.BLACK:
             # 黑色檢測：使用 LAB 的 L 通道（亮度）
             l_channel = lab[:, :, 0]
-            color_mask = (l_channel < 30).astype(np.uint8) * 255
+            color_mask = (l_channel < BLACK_THRESHOLD).astype(np.uint8) * PIXEL_MAX_VALUE
 
         elif self.color_filter.color == ColorFilter.WHITE:
             # 白色檢測：使用 LAB 的 L 通道
             l_channel = lab[:, :, 0]
-            color_mask = (l_channel > 225).astype(np.uint8) * 255
+            color_mask = (l_channel > WHITE_THRESHOLD).astype(np.uint8) * PIXEL_MAX_VALUE
 
         else:
             return image
@@ -227,7 +234,7 @@ class UnifiedBackend(BaseBackend):
         color_mask = cv2.GaussianBlur(color_mask, (5, 5), 0)
 
         # 反轉遮罩（0 = 背景要移除，255 = 前景保留）
-        foreground_mask = 255 - color_mask
+        foreground_mask = PIXEL_MAX_VALUE - color_mask
 
         # 與現有 alpha 合併（取最小值 = 交集）
         new_alpha = np.minimum(alpha, foreground_mask)
@@ -273,10 +280,10 @@ class UnifiedBackend(BaseBackend):
 
         rgba = np.array(image, dtype=np.float32)
         rgb = rgba[:, :, :3]
-        alpha = rgba[:, :, 3] / 255.0  # 歸一化到 0-1
+        alpha = rgba[:, :, 3] / PIXEL_MAX_VALUE  # 歸一化到 0-1
 
         # 找出邊緣區域（半透明像素）
-        edge_mask = (alpha > 0.01) & (alpha < 0.99)
+        edge_mask = (alpha > EDGE_ALPHA_MIN) & (alpha < EDGE_ALPHA_MAX)
 
         if not np.any(edge_mask):
             return image

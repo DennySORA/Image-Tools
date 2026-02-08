@@ -1,0 +1,21 @@
+commit fbe72240ca2e52c94d4eb313da66981e45339d8a
+Author:     DennySORA <dennysora.main@gmail.com>
+AuthorDate: Sun Feb 8 20:46:35 2026 +0800
+Commit:     DennySORA <dennysora.main@gmail.com>
+CommitDate: Sun Feb 8 20:46:35 2026 +0800
+
+    chore(stage-0): establish baseline and install quality tools
+    
+        - Add mypy and ruff to dev dependencies
+        - Create validation script (scripts/validate.sh)
+        - Document baseline: 64 tests (44 passed, 20 skipped), 22 source files, ~3,516 LOC
+        - File size issues identified: 2 files exceed 500 lines
+        - Code duplication identified: ColorFilter in ultra.py and unified.py
+        - All passing tests verified, ready for refactor
+    
+        Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
+
+A	BASELINE.md
+M	pyproject.toml
+A	scripts/validate.sh
+M	uv.lock

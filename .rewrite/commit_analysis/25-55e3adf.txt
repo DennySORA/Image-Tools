@@ -1,0 +1,26 @@
+commit 55e3adf5e56b67d95396705f2b4d9881904e051e
+Author:     DennySORA <dennysora.main@gmail.com>
+AuthorDate: Sun Feb 8 20:07:00 2026 +0800
+Commit:     DennySORA <dennysora.main@gmail.com>
+CommitDate: Sun Feb 8 20:07:00 2026 +0800
+
+    docs: update README with unified backend features
+    
+        Highlights:
+        - Emphasize unified SOTA backend as primary feature
+        - Add comprehensive feature comparison table
+        - Include processing pipeline diagram
+        - Document recommended settings for different scenarios
+        - Add performance benchmarks and hardware requirements
+        - Update dependencies with proper licenses
+        - Add acknowledgments section
+    
+        Key improvements:
+        - Clear guidance on when to use color filter
+        - Strength parameter recommendations
+        - Comparison with commercial services (remove.bg)
+        - Complete technical documentation reference
+    
+        Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
+
+M	README.md

@@ -1,0 +1,41 @@
+commit 19e20a83418ef6f98611ba118f8585190548e57d
+Author:     DennySORA <dennysora.main@gmail.com>
+AuthorDate: Sat Dec 27 22:48:02 2025 +0800
+Commit:     DennySORA <dennysora.main@gmail.com>
+CommitDate: Sat Dec 27 22:48:02 2025 +0800
+
+    ci: enforce strict CI checks and typing
+    
+    **Modified files**:
+    - `README.md`
+    - `docs/README.ja.md`
+    - `docs/README.zh-CN.md`
+    - `docs/README.zh-TW.md`
+    - `main.py`
+    - ... and 20 more
+
+A	.github/workflows/ci.yml
+A	.github/workflows/release.yml
+M	README.md
+M	docs/README.ja.md
+M	docs/README.zh-CN.md
+M	docs/README.zh-TW.md
+M	main.py
+M	pyproject.toml
+M	src/backends/__init__.py
+M	src/backends/backgroundremover.py
+M	src/backends/greenscreen.py
+M	src/backends/registry.py
+M	src/backends/rembg.py
+M	src/backends/transparent_bg.py
+M	src/core/__init__.py
+M	src/core/interfaces.py
+M	src/core/models.py
+M	src/core/processor.py
+M	src/postprocess/__init__.py
+M	src/postprocess/green_screen.py
+M	src/ui/__init__.py
+M	src/ui/console.py
+M	src/ui/interactive.py
+A	tests/test_models.py
+M	uv.lock

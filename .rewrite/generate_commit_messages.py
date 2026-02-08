@@ -1,0 +1,459 @@
+import json
+from pathlib import Path
+
+COMMITS_PATH = Path('.rewrite/commits.txt')
+OUT_PATH = Path('.rewrite/commit_messages.jsonl')
+
+commits = [line.strip() for line in COMMITS_PATH.read_text(encoding='utf-8').splitlines() if line.strip()]
+
+messages: dict[str, str] = {
+    # 01
+    '46b9c10784bd93b835084e4900ed901916eafb31': (
+        'feat(app): add interactive CLI for batch background removal\n'
+        '\n'
+        '- What: add project scaffolding (pyproject/uv, python version, gitignore).\n'
+        '- What: implement core models and interfaces plus an ImageProcessor for folder scans and result reporting.\n'
+        '- What: add a backend registry with initial engines (rembg, transparent-background, backgroundremover).\n'
+        '- What: add a guided console flow to select folder/backend/model/strength and run batch processing.\n'
+        '- Why: provide an extensible, user-friendly entry point for background removal workflows.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 02
+    'aedd3f5097ae2686155892a787e47d022cb09cea': (
+        'feat(backends): add hybrid greenscreen backend pipeline\n'
+        '\n'
+        '- What: add GreenScreenBackend with chroma-only, AI-enhanced, and hybrid processing modes.\n'
+        '- What: add a GreenScreenProcessor pipeline (HSV mask, morphology, alpha merge, despill).\n'
+        '- What: register the backend and surface mode selection in the interactive UI.\n'
+        '- What: accidentally commit a macOS .DS_Store artifact.\n'
+        '- Why: improve results on green-screen inputs by combining chroma keying with refinement.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 03
+    '91d50407a912d114a322a3e2a28d3b8cc11f2aeb': (
+        'fix(backends): force transparent-background outputs to PNG\n'
+        '\n'
+        '- What: save TransparentBgBackend outputs as .png to preserve alpha transparency.\n'
+        '- What: update README backend documentation and usage notes accordingly.\n'
+        '- Why: ensure downstream tools consistently receive a transparent output instead of losing the alpha channel.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 04
+    'daebad96cc043a0d76299c14a68cd30a0e4d5940': (
+        'docs: add Japanese and Chinese README translations\n'
+        '\n'
+        '- What: update README with language links and a usage-focused overview.\n'
+        '- What: add translated docs (ja, zh-CN, zh-TW) under docs/.\n'
+        '- Why: make installation and usage instructions accessible to more users.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 05
+    '19e20a83418ef6f98611ba118f8585190548e57d': (
+        'ci: add GitHub Actions checks for ruff, mypy, pytest, pip-audit\n'
+        '\n'
+        '- What: add CI and release workflows that run on Python 3.13 with uv sync --frozen.\n'
+        '- What: install and run quality gates (ruff format/lint, mypy strict, pytest, pip-audit).\n'
+        '- What: add ruff/mypy/pytest/coverage configuration to pyproject.toml.\n'
+        '- What: update source modules and add a small test to align with stricter typing and lint rules.\n'
+        '- Why: enforce consistent quality checks on pushes/PRs and on tagged releases.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 06
+    'a786050f11baaa074a1139e6ce1439f13c79649e': (
+        'fix(backends): patch moviepy import for backgroundremover\n'
+        '\n'
+        '- What: import moviepy.editor and alias moviepy.VideoFileClip when the top-level symbol is missing.\n'
+        '- Why: avoid runtime import errors caused by moviepy API differences in backgroundremover.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 07
+    '4ac1c3bffcbdece9f4d2f39cdac6e538a63d0c0c': (
+        'feat(ui): add recent-folder picker with PathHistory\n'
+        '\n'
+        '- What: add src/ui/history.py to persist and load recent input folders from .rembg_history.json.\n'
+        '- What: extend InteractiveUI to offer a recent-paths menu and extract folder validation into a helper.\n'
+        '- What: ignore the history file in .gitignore and export PathHistory from src/ui/__init__.py.\n'
+        '- Why: speed up repeated runs by reducing manual path entry.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 08
+    '0368aa872aeba280fe6e9459b8490f6a6cd33e3b': (
+        'feat(backends): add Gemini watermark removal backend\n'
+        '\n'
+        '- What: add a GeminiWatermarkBackend that removes the visible watermark via reverse alpha blending.\n'
+        '- What: include reference background patterns (48px/96px) and auto-detect based on image dimensions.\n'
+        '- What: register the backend and expose it in the interactive UI.\n'
+        '- Why: allow watermark cleanup as a first step before other processing.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 09
+    '4d6217e8c3d8b1a3c8401aef53f2e2d02bf609f6': (
+        'feat(ui): add back navigation and continuous run loop\n'
+        '\n'
+        '- What: add a back-navigation option to Console.get_choice() and wire it through the prompt flow.\n'
+        '- What: refactor InteractiveUI into nested loops/state-style steps to support returning to prior choices.\n'
+        '- What: update main.py to continuously return to the menu after processing, with strength defaults.\n'
+        '- Why: let users correct choices without restarting and process multiple batches in one session.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 10
+    'eeb7fee1965316c26ee970d9b64c4d9663e6bba5': (
+        'feat(utils): add alpha-based image splitter utilities\n'
+        '\n'
+        '- What: add a splitter implementation based on alpha connected components with smart threshold selection.\n'
+        '- What: add geometry helpers (BBox) and a union-find structure to support grouping/merging logic.\n'
+        '- What: export the new utilities from src/utils/__init__.py.\n'
+        '- Why: enable splitting sprite sheets or merged assets into per-object images.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 11
+    'f88316f19957c184f0ba7fb32849592274a090dc': (
+        'feat(backends): add image splitter backend adapter\n'
+        '\n'
+        '- What: add an ImageSplitterBackend adapter that exposes canvas modes and alpha-threshold configuration.\n'
+        '- What: register the backend in src/backends/__init__.py so it appears in the registry/UI.\n'
+        '- Why: integrate splitting into the same backend selection workflow as other operations.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 12
+    '0aa4c384c59082c44f9e190a24be828089beecf8': (
+        'test: add sprite sheet fixtures for splitter tests\n'
+        '\n'
+        '- What: add a test generator that creates deterministic sprite sheets for validation.\n'
+        '- What: commit generated fixture images under test_images/ for quick manual inspection.\n'
+        '- Why: provide repeatable inputs for testing connected-component splitting and thresholding behavior.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 13
+    '5d2fae01e8f2d3cb2a0237964c6a545495b30496': (
+        'test: add splitter validation script and sample outputs\n'
+        '\n'
+        '- What: add a validation script that exercises the splitter on the sprite fixtures and checks results.\n'
+        '- What: commit example output images under test_output/ to support visual verification.\n'
+        '- Why: make it easy to confirm splitting behavior during development and troubleshooting.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 14
+    'd19275446c8d0d8bad1ed7f110cbc413af52b51a': (
+        'docs: document image splitter design and usage\n'
+        '\n'
+        '- What: add docs/IMAGE_SPLITTER.md describing the algorithm, configuration, and usage examples.\n'
+        '- What: add a small backend-registry smoke script to verify the splitter backend is discoverable.\n'
+        '- Why: make the splitter easier to understand, tune, and integrate into workflows.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 15
+    '5c59101e8931dcb5ce2def8c3c05843623ba608e': (
+        'docs: add image-splitter integration summary\n'
+        '\n'
+        '- What: add INTEGRATION_SUMMARY.md capturing integration notes and results for the splitter work.\n'
+        '- Why: preserve context for future maintenance and refactors.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 16
+    'e4c761c45cd2e462858d569317ab26d9a0b412fe': (
+        'chore: remove generated test assets and ignore local artifacts\n'
+        '\n'
+        '- What: delete ad-hoc test scripts and generated binary assets (test_images/, test_output/, summary docs).\n'
+        '- What: expand .gitignore to cover caches, IDE files, .DS_Store, and local test/output folders.\n'
+        '- What: apply small lint/format cleanups in the splitter utilities.\n'
+        '- Why: keep the repository focused on production code and avoid committing generated outputs.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 17
+    'f79fa51eac348c3f58bebbd4686010f19fa0ccf2': (
+        'feat(ui): add InquirerPy-based modern interactive CLI\n'
+        '\n'
+        '- What: add a new ModernUI implementation using InquirerPy for keyboard-driven prompts.\n'
+        '- What: switch main.py to use ModernUI and auto-return to the main menu after processing.\n'
+        '- What: add the inquirerpy dependency and allow print usage in main/UI via ruff per-file ignores.\n'
+        '- What: remove docs/IMAGE_SPLITTER.md as part of this rework.\n'
+        '- Why: provide a smoother interactive experience than the legacy console UI flow.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 18
+    '000ea43e3f410f6697a8451aecf4feb9a6f60bcb': (
+        'docs: restore image splitter documentation\n'
+        '\n'
+        '- What: restore docs/IMAGE_SPLITTER.md after it was accidentally removed.\n'
+        '- Why: keep the splitter documentation available for users and contributors.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 19
+    'd98ce4e19b9270109ff3bc0bb596dd85356f5355': (
+        'docs: add ModernUI usage and shortcuts guide\n'
+        '\n'
+        '- What: add docs/NEW_UI_GUIDE.md documenting features, workflows, and keyboard shortcuts.\n'
+        '- Why: help users adopt the new interface and understand the available operations.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 20
+    'a84e5fd34994cead0c56b7336cfc215d3fa3cdf4': (
+        'fix(ui): use PathHistory load/save API in ModernUI\n'
+        '\n'
+        '- What: update ModernUI to call PathHistory.load() and PathHistory.save() instead of non-existent methods.\n'
+        '- What: ensure recent-path iteration and persistence uses Path objects consistently.\n'
+        '- Why: prevent AttributeError when using recent folder history.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 21
+    '9e8839636c6ceba1a106b9d66adc910cb9eebb73': (
+        'fix(ui): make ESC consistently navigate back in ModernUI\n'
+        '\n'
+        '- What: make InquirerPy prompts non-mandatory and treat KeyboardInterrupt as a navigation signal.\n'
+        '- What: restructure ModernUI control flow into nested loops to support multi-level back navigation.\n'
+        '- Why: ensure ESC returns to the previous step instead of exiting or leaving the UI in an inconsistent state.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 22
+    'a3ab3889d00be8a596890a443cdf707be45444ba': (
+        'fix(ui): avoid recursive folder selection and add back options\n'
+        '\n'
+        '- What: replace recursive folder-selection calls with a loop to avoid unbounded recursion.\n'
+        '- What: add explicit \"Back\" menu items in operation/backend/model selectors as an alternative to ESC.\n'
+        '- What: print lightweight status messages when selections are confirmed or when navigating back.\n'
+        '- Why: improve navigation reliability across terminals and prevent recursion-related failures.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 23
+    '77b5d8027976ede13f7fa9cc6a57fd395a2e933b': (
+        'docs: add ESC key navigation troubleshooting guide\n'
+        '\n'
+        '- What: add docs/ESC_KEY_FIX.md explaining ESC handling, limitations, and terminal compatibility notes.\n'
+        '- Why: help users understand and troubleshoot back-navigation behavior on different platforms.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 24
+    '8cfa38209d60af015a563a43bb2dbc68f58a49a8': (
+        'feat(backends): add unified background-removal backend pipeline\n'
+        '\n'
+        '- What: add a UnifiedBackend implementation (BiRefNet via rembg) with optional matting/edge refinement.\n'
+        '- What: add defringing and optional pure-color background filtering, configurable via extra_config.\n'
+        '- What: register the backend, update ModernUI wiring, and add docs/UNIFIED_BACKEND.md.\n'
+        '- Why: provide a single local backend with improved edge quality and fewer artifacts than the older mix of engines.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 25
+    '55e3adf5e56b67d95396705f2b4d9881904e051e': (
+        'docs: update README for unified backend workflow\n'
+        '\n'
+        '- What: expand README with unified-backend usage guidance, recommended settings, and benchmarks.\n'
+        '- What: document dependencies/licenses and link to the detailed unified backend guide.\n'
+        '- Why: make the primary workflow easier to discover and configure correctly.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 26
+    'd6721f010781fcd1ea7694b4a892cb05d2ebea52': (
+        'docs: add migration guide for unified backend\n'
+        '\n'
+        '- What: add docs/MIGRATION_GUIDE.md mapping older backend options and settings to the unified backend.\n'
+        '- What: include scenario-based recommendations and a checklist for validating migrated outputs.\n'
+        '- Why: help existing users transition without losing expected output quality.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 27
+    '4fdb232d2ffc9f4bd505cf0e933af2736b8fbeb5': (
+        'feat(backends): add BRIA RMBG-2.0 ultra background-removal backend\n'
+        '\n'
+        '- What: add an UltraBackend implementation using transformers (briaai/RMBG-2.0) for high-quality alpha mattes.\n'
+        '- What: implement trimap-based refinement and defringing, plus an optional pure-color background filter.\n'
+        '- What: update backend registration/UI defaults and add docs/ULTRA_BACKEND.md with license guidance (CC BY-NC).\n'
+        '- What: update dependencies and lockfile (torch/torchvision/transformers/opencv-contrib-python).\n'
+        '- Why: provide a maximum-quality option for personal/non-commercial use cases with clear documentation.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 28
+    'e37bff8e6cf9c203e71e88fb454b883580b541bb': (
+        'docs: update README with ultra vs unified comparison\n'
+        '\n'
+        '- What: update README highlights and add guidance for choosing Ultra vs Unified.\n'
+        '- What: clarify licensing differences (CC BY-NC vs MIT) and link to backend documentation.\n'
+        '- Why: reduce confusion and prevent accidental misuse of the non-commercial Ultra backend.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 29
+    'd7e5da89347bc892df24bf72606184153f70dc10': (
+        'test: add pytest suite with generated image fixtures\n'
+        '\n'
+        '- What: add a pytest test suite for core models/processor plus Unified/Ultra backend behavior.\n'
+        '- What: add fixtures that generate synthetic images at runtime to avoid committing large binaries.\n'
+        '- What: add docs/TESTING.md and run_tests.sh, and configure pytest/coverage in pyproject.toml.\n'
+        '- Why: make backend development safer with repeatable tests that can run in CI.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 30
+    '95d405f718201384e029cc2b6c2af2af1b566763': (
+        'chore: remove deprecated backends and legacy UI\n'
+        '\n'
+        '- What: remove legacy background-removal backends that are superseded by the unified/ultra implementations.\n'
+        '- What: remove the old console/interactive UI modules after migrating to the modern UI.\n'
+        '- What: prune dependencies and registry exports, and remove the existing uv.lock snapshot.\n'
+        '- Why: reduce maintenance surface area and keep the project focused on the supported backends.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 31
+    'fbe72240ca2e52c94d4eb313da66981e45339d8a': (
+        'chore(stage-0): add ruff/mypy tooling and baseline report\n'
+        '\n'
+        '- What: add BASELINE.md capturing the starting state and identifying refactor targets.\n'
+        '- What: add mypy/ruff as dev tooling and update the lockfile accordingly.\n'
+        '- What: add scripts/validate.sh to run formatting, linting, typing, and tests locally.\n'
+        '- Why: establish clear quality gates and a baseline before the staged refactor work.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 32
+    '9b5a8416366340cec89d98c069d1936c4b61ecda': (
+        'chore(stage-1): fix typing issues to satisfy mypy and ruff\n'
+        '\n'
+        '- What: update type annotations and add targeted type: ignore comments for untyped third-party imports.\n'
+        '- What: refine generics and type narrowing in backends, UI, and splitter code to satisfy strict mypy.\n'
+        '- What: apply ruff auto-fixes and formatting adjustments in the touched modules.\n'
+        '- Why: get to a clean, enforced baseline so later refactors can focus on structure instead of tooling noise.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 33
+    '9f17535b00d44ca71ef63b928714bbedf620ee12': (
+        'refactor(stage-2): migrate domain models to Pydantic\n'
+        '\n'
+        '- What: introduce src/data_model/ with Pydantic models for configs/results and file metadata.\n'
+        '- What: add src/settings/ with AppSettings via pydantic-settings for environment-driven configuration.\n'
+        '- What: update imports across the codebase and keep a compatibility shim in src/core/models.py.\n'
+        '- Why: centralize validation and configuration handling with stricter typing and clearer boundaries.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 34
+    'c2fffe5bbc98e3a6dd8341eec2f26e670626329c': (
+        'refactor(stage-3): extract shared color filter module\n'
+        '\n'
+        '- What: add src/common/color_filter.py with ColorFilter and ColorFilterConfig shared by multiple backends.\n'
+        '- What: remove duplicate color-filter implementations from Ultra/Unified and update imports accordingly.\n'
+        '- Why: reduce duplication and keep filtering behavior consistent across backends.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 35
+    '8a6a46b1773e1b5c464864562e7d9bb18d4da53a': (
+        'refactor(stage-4): reorganize code into feature modules\n'
+        '\n'
+        '- What: introduce src/features/ and move background removal, watermark removal, and image splitting into dedicated packages.\n'
+        '- What: keep compatibility shims under src/backends/ and src/utils/ to preserve existing import paths.\n'
+        '- What: update registry wiring and imports, and relocate watermark assets under the feature package.\n'
+        '- Why: improve cohesion and reduce coupling by grouping code by user-facing capability.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 36
+    '2f7661b608b77ef89534aebcb05a1030931a4953': (
+        'refactor(stage-5): annotate splitter module for future refactor\n'
+        '\n'
+        '- What: add TODO notes documenting that the splitter module exceeds the file-length guideline.\n'
+        '- Why: track technical debt and outline safe follow-up work without blocking the current refactor stages.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 37
+    '9da25b03658cd17853c2e65ee0fb0a12353ff292': (
+        'refactor(stage-6): introduce ApplicationService and dependency injection\n'
+        '\n'
+        '- What: add src/app.py with an ApplicationService that orchestrates UI configuration and processing.\n'
+        '- What: refactor main.py into a thin entry point that wires dependencies and delegates to the service.\n'
+        '- Why: improve separation of concerns and make orchestration logic easier to test and evolve.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+
+    # 38
+    '179bdca3db2b562af2bf553f1e7c3d031ea2c93b': (
+        'style(stage-7): apply ruff formatting and import cleanups\n'
+        '\n'
+        '- What: add a ruff per-file ignore for src/app.py to allow intentional user-facing prints.\n'
+        '- What: remove unused imports and reorder imports to satisfy ruff/isort across compatibility shims and features.\n'
+        '- What: apply small whitespace/formatting fixes (blank lines, __all__ blocks) for consistency.\n'
+        '- Why: keep the codebase clean under strict formatting and lint rules.\n'
+        '\n'
+        'Tests: not run (not provided)'
+    ),
+}
+
+missing = [sha for sha in commits if sha not in messages]
+extra = [sha for sha in messages if sha not in set(commits)]
+if missing:
+    raise SystemExit(f'Missing messages for {len(missing)} commits: {missing}')
+if extra:
+    raise SystemExit(f'Messages provided for unknown commits: {extra}')
+
+OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+with OUT_PATH.open('w', encoding='utf-8') as f:
+    for sha in commits:
+        f.write(json.dumps({'sha': sha, 'message': messages[sha]}, ensure_ascii=False) + '\n')
+
+print(f'Wrote {len(commits)} commit messages to {OUT_PATH}')

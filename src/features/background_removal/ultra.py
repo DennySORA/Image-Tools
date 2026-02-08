@@ -27,6 +27,7 @@ import numpy as np
 import torch
 from PIL import Image
 from torchvision import transforms  # type: ignore[import-untyped]
+from transformers import AutoModelForImageSegmentation  # type: ignore[import-untyped]
 
 from src.backends.registry import BackendRegistry
 from src.common import ColorFilter, ColorFilterConfig
@@ -34,6 +35,15 @@ from src.core.interfaces import BaseBackend
 
 
 logger = logging.getLogger(__name__)
+
+# 常數定義
+PIXEL_MAX_VALUE = 255
+TRIMAP_UNKNOWN = 128
+BLACK_THRESHOLD = 30
+WHITE_THRESHOLD = 225
+EDGE_ALPHA_MIN = 0.01
+EDGE_ALPHA_MAX = 0.99
+ALPHA_CHANNEL_INDEX = 3
 
 
 @BackendRegistry.register("ultra")
@@ -63,7 +73,7 @@ class UltraBackend(BaseBackend):
 
     def __init__(
         self,
-        model: str = "auto",
+        model: str = "auto",  # noqa: ARG002
         strength: float = 0.8,
         color_filter: ColorFilterConfig | None = None,
         use_trimap_refine: bool = True,
@@ -73,7 +83,7 @@ class UltraBackend(BaseBackend):
         初始化極致後端
 
         Args:
-            model: 模型名稱（保留參數，實際固定使用 RMBG-2.0）
+            model: 模型名稱（保留參數以符合介面，實際固定使用 RMBG-2.0）
             strength: 處理強度 (0.1-1.0)
                      - 0.1-0.3: 保守（保留更多細節，可能有殘留）
                      - 0.4-0.7: 平衡（推薦）
@@ -107,13 +117,6 @@ class UltraBackend(BaseBackend):
         """載入 RMBG-2.0 模型"""
         logger.info("Loading BRIA RMBG-2.0 model...")
         logger.info("⚠️  This model is for NON-COMMERCIAL use only (CC BY-NC 4.0)")
-
-        try:
-            from transformers import AutoModelForImageSegmentation
-        except ImportError as e:
-            raise ImportError(
-                "transformers library required. Install: pip install transformers"
-            ) from e
 
         # 載入模型
         self._model = AutoModelForImageSegmentation.from_pretrained(
@@ -157,12 +160,10 @@ class UltraBackend(BaseBackend):
 
         # 轉為 numpy 並調整大小回原圖
         alpha = output.cpu().numpy()
-        alpha = (alpha * 255).astype(np.uint8)
+        alpha = (alpha * PIXEL_MAX_VALUE).astype(np.uint8)
 
         # Resize 回原始尺寸
-        alpha = cv2.resize(alpha, original_size, interpolation=cv2.INTER_LINEAR)
-
-        return alpha  # type: ignore[no-any-return]
+        return cv2.resize(alpha, original_size, interpolation=cv2.INTER_LINEAR)  # type: ignore[no-any-return]
 
     def _create_trimap(
         self, alpha: np.ndarray, erode_kernel: int, dilate_kernel: int
@@ -195,9 +196,9 @@ class UltraBackend(BaseBackend):
         background = cv2.bitwise_not(background_inv)
 
         # 組合 trimap
-        trimap = np.full_like(alpha, 128)  # 預設未知
-        trimap[background == 255] = 0  # 確定背景
-        trimap[foreground == 255] = 255  # 確定前景
+        trimap = np.full_like(alpha, TRIMAP_UNKNOWN)  # 預設未知
+        trimap[background == PIXEL_MAX_VALUE] = 0  # 確定背景
+        trimap[foreground == PIXEL_MAX_VALUE] = PIXEL_MAX_VALUE  # 確定前景
 
         return trimap
 
@@ -217,10 +218,10 @@ class UltraBackend(BaseBackend):
         Returns:
             精煉後的 alpha
         """
-        refined_alpha = alpha.copy().astype(np.float32) / 255.0
+        refined_alpha = alpha.copy().astype(np.float32) / PIXEL_MAX_VALUE
 
         # 找出未知區域
-        unknown_mask = trimap == 128
+        unknown_mask = trimap == TRIMAP_UNKNOWN
 
         if not np.any(unknown_mask):
             return alpha
@@ -258,7 +259,7 @@ class UltraBackend(BaseBackend):
             blurred = cv2.GaussianBlur(refined_alpha, (blur_size, blur_size), 0)
             refined_alpha[edge_mask] = blurred[edge_mask]
 
-        return (refined_alpha * 255).astype(np.uint8)
+        return (refined_alpha * PIXEL_MAX_VALUE).astype(np.uint8)
 
     def _apply_advanced_defringing(
         self, image: np.ndarray, alpha: np.ndarray
@@ -280,10 +281,10 @@ class UltraBackend(BaseBackend):
             return image
 
         result = image.astype(np.float32)
-        alpha_normalized = alpha.astype(np.float32) / 255.0
+        alpha_normalized = alpha.astype(np.float32) / PIXEL_MAX_VALUE
 
         # 找出邊緣區域（半透明像素）
-        edge_mask = (alpha_normalized > 0.01) & (alpha_normalized < 0.99)
+        edge_mask = (alpha_normalized > EDGE_ALPHA_MIN) & (alpha_normalized < EDGE_ALPHA_MAX)
 
         if not np.any(edge_mask):
             return image
@@ -304,7 +305,6 @@ class UltraBackend(BaseBackend):
         result[:, :, 2][edge_mask] -= b_diff[edge_mask] * defringe_strength * 0.6
 
         # === 方法 2: LAB 色彩空間分析（移除亮度不匹配） ===
-        lab = cv2.cvtColor(image, cv2.COLOR_RGB2LAB).astype(np.float32)
         lab_result = cv2.cvtColor(result.astype(np.uint8), cv2.COLOR_RGB2LAB).astype(
             np.float32
         )
@@ -377,11 +377,11 @@ class UltraBackend(BaseBackend):
 
         elif self.color_filter.color == ColorFilter.BLACK:
             l_channel = lab[:, :, 0]
-            color_mask = (l_channel < 30).astype(np.uint8) * 255
+            color_mask = (l_channel < BLACK_THRESHOLD).astype(np.uint8) * PIXEL_MAX_VALUE
 
         elif self.color_filter.color == ColorFilter.WHITE:
             l_channel = lab[:, :, 0]
-            color_mask = (l_channel > 225).astype(np.uint8) * 255
+            color_mask = (l_channel > WHITE_THRESHOLD).astype(np.uint8) * PIXEL_MAX_VALUE
 
         else:
             return alpha
@@ -399,7 +399,7 @@ class UltraBackend(BaseBackend):
         color_mask = cv2.GaussianBlur(color_mask, (7, 7), 0)
 
         # 與現有 alpha 合併（取最小值）
-        foreground_mask = 255 - color_mask
+        foreground_mask = PIXEL_MAX_VALUE - color_mask
         return np.minimum(alpha, foreground_mask)  # type: ignore[no-any-return]
 
     def process(self, input_path: Path, output_path: Path) -> bool:

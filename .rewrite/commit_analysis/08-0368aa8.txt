@@ -1,0 +1,20 @@
+commit 0368aa872aeba280fe6e9459b8490f6a6cd33e3b
+Author:     DennySORA <dennysora.main@gmail.com>
+AuthorDate: Sat Feb 7 23:03:59 2026 +0800
+Commit:     DennySORA <dennysora.main@gmail.com>
+CommitDate: Sat Feb 7 23:03:59 2026 +0800
+
+    feat(backends): add Gemini watermark removal backend
+    
+        Add a new backend that removes visible Gemini AI watermarks using
+        reverse alpha blending. Includes reference pattern images (48px/96px),
+        auto-detection based on image dimensions, RGBA alpha channel handling,
+        and fixed strength at 1.0 for optimal removal.
+    
+        Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+
+M	src/backends/__init__.py
+A	src/backends/assets/bg_48.png
+A	src/backends/assets/bg_96.png
+A	src/backends/gemini_watermark.py
+M	src/ui/interactive.py

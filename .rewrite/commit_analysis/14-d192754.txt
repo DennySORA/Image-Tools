@@ -1,0 +1,22 @@
+commit d19275446c8d0d8bad1ed7f110cbc413af52b51a
+Author:     DennySORA <dennysora.main@gmail.com>
+AuthorDate: Sun Feb 8 19:31:52 2026 +0800
+Commit:     DennySORA <dennysora.main@gmail.com>
+CommitDate: Sun Feb 8 19:31:52 2026 +0800
+
+    docs: add comprehensive image splitter documentation
+    
+        Add detailed documentation covering:
+        - Algorithm principles (8-connected component labeling)
+        - Smart threshold selection mechanism
+        - Configuration parameters and canvas modes
+        - Usage examples (CLI, backend, UI)
+        - Performance metrics and test results
+        - Troubleshooting guide
+    
+        Confirmed backend integration: image-splitter automatically available in UI
+    
+        Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
+
+A	docs/IMAGE_SPLITTER.md
+A	test_backend_registry.py

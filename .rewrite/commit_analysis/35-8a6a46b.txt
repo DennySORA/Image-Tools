@@ -1,0 +1,41 @@
+commit 8a6a46b1773e1b5c464864562e7d9bb18d4da53a
+Author:     DennySORA <dennysora.main@gmail.com>
+AuthorDate: Sun Feb 8 21:11:50 2026 +0800
+Commit:     DennySORA <dennysora.main@gmail.com>
+CommitDate: Sun Feb 8 21:11:50 2026 +0800
+
+    refactor(stage-4): introduce feature-based architecture
+    
+        - Create src/features/ with feature-specific modules
+        - Organize backends into features:
+          - background_removal/ (ultra, unified)
+          - watermark_removal/ (gemini_watermark + assets)
+          - image_splitting/ (image_splitter + utils)
+        - Move utils (splitter, union_find, geometry) to image_splitting feature
+        - Create compatibility shims in src/backends/ for backward compatibility
+        - Update all imports to use src.backends.registry consistently
+        - Add __init__.py files for proper module exports
+        - Update src/utils/ to re-export from features (compatibility)
+        - All 44 tests passing, 20 skipped (network/model access)
+        - Quality gates: mypy ✓ (0 errors), tests ✓
+    
+        Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
+
+M	src/backends/gemini_watermark.py
+M	src/backends/image_splitter.py
+M	src/backends/ultra.py
+M	src/backends/unified.py
+A	src/features/__init__.py
+A	src/features/background_removal/__init__.py
+A	src/features/background_removal/ultra.py
+A	src/features/background_removal/unified.py
+A	src/features/image_splitting/__init__.py
+R100	src/utils/geometry.py	src/features/image_splitting/geometry.py
+A	src/features/image_splitting/image_splitter.py
+R100	src/utils/splitter.py	src/features/image_splitting/splitter.py
+R100	src/utils/union_find.py	src/features/image_splitting/union_find.py
+A	src/features/watermark_removal/__init__.py
+R100	src/backends/assets/bg_48.png	src/features/watermark_removal/assets/bg_48.png
+R100	src/backends/assets/bg_96.png	src/features/watermark_removal/assets/bg_96.png
+A	src/features/watermark_removal/gemini_watermark.py
+M	src/utils/__init__.py

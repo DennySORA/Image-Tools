@@ -1,0 +1,72 @@
+commit 4fdb232d2ffc9f4bd505cf0e933af2736b8fbeb5
+Author:     DennySORA <dennysora.main@gmail.com>
+AuthorDate: Sun Feb 8 20:17:29 2026 +0800
+Commit:     DennySORA <dennysora.main@gmail.com>
+CommitDate: Sun Feb 8 20:17:29 2026 +0800
+
+    feat(backend): add ultra backend with BRIA RMBG-2.0 for maximum quality
+    
+        Implement ultimate background removal solution for personal use:
+    
+        Core Technology:
+        - BRIA RMBG-2.0: Professional-grade alpha matte model (CC BY-NC 4.0)
+        - Trimap-based Refinement: Intelligent boundary processing
+        - Multi-space Defringing: RGB + LAB + HSV color analysis
+        - Adaptive Color Filter: Pure color background optimization
+    
+        Technical Implementation:
+        - Direct transformers integration (briaai/RMBG-2.0)
+        - Guided Filter for edge refinement (preserves details)
+        - 4-stage pipeline: Segmentation → Trimap → Defringing → Color Filter
+        - Dynamic parameter adjustment based on strength
+        - GPU acceleration with PyTorch
+    
+        Key Features:
+        - Native 8-bit alpha matte output (not binary mask)
+        - Trimap refinement only in uncertain regions (avoids over-blur)
+        - Three-method defringing (RGB balance, LAB color, alpha-adaptive)
+        - Configurable trimap kernel size based on strength
+        - Optional trimap refinement (can disable for speed)
+    
+        Quality Improvements over Unified:
+        - Professional training dataset (BRIA)
+        - Complete trimap-based edge refinement
+        - Multi-color-space defringing analysis
+        - Superior edge quality for complex boundaries
+        - Better handling of hair, fur, transparent materials
+    
+        Dependencies Added:
+        - transformers >= 4.45.0 (for RMBG-2.0)
+        - torch >= 2.0.0 (GPU acceleration)
+        - torchvision >= 0.15.0 (image transforms)
+        - opencv-contrib-python >= 4.10.0 (guided filter)
+    
+        UI Updates:
+        - Changed default background removal to ultra backend
+        - Shared configuration with unified backend
+        - Default strength increased to 0.8
+        - Clear non-commercial use warning
+    
+        Documentation:
+        - Comprehensive ULTRA_BACKEND.md guide
+        - Detailed technical explanations
+        - Performance benchmarks
+        - FAQ section
+        - Commercial vs non-commercial guidance
+    
+        ⚠️ IMPORTANT: This backend is for NON-COMMERCIAL use only
+        - License: CC BY-NC 4.0 (BRIA RMBG-2.0)
+        - Suitable for: Personal, research, education
+        - Commercial use requires separate agreement with BRIA
+    
+        For commercial projects, use the unified backend (MIT license).
+    
+        Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
+
+A	docs/ULTRA_BACKEND.md
+M	main.py
+M	pyproject.toml
+M	src/backends/__init__.py
+A	src/backends/ultra.py
+M	src/ui/modern.py
+M	uv.lock
