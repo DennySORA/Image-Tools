@@ -18,6 +18,11 @@ logger = logging.getLogger(__name__)
 # 常數定義
 EDGE_DETECTION_THRESHOLD = 0.1  # 邊緣檢測閾值
 HAIR_TEXTURE_THRESHOLD = 5  # 頭髮紋理檢測閾值
+SKIN_HUE_MIN = 0  # 肤色 Hue 最小值
+SKIN_HUE_MAX = 50  # 肤色 Hue 最大值（偏橙色）
+SKIN_SAT_MIN = 0.1  # 肤色饱和度最小值
+SKIN_SAT_MAX = 0.7  # 肤色饱和度最大值
+SKIN_VAL_MIN = 0.2  # 肤色明度最小值
 
 
 class PortraitMattingRefiner:
@@ -158,11 +163,13 @@ class PortraitMattingRefiner:
         """
         使用增強影像處理技術精修 alpha（無需額外模型）
 
-        這個方法使用多種影像處理技術來優化人像邊緣：
-        1. 邊緣檢測與增強
-        2. 基於梯度的細節保留
-        3. 自適應平滑（保留頭髮等細節）
-        4. 色彩引導的邊界精修
+        大幅改進的方法使用多種先進影像處理技術：
+        1. 肤色檢測輔助人像識別
+        2. 多尺度邊緣檢測與增強
+        3. 基於梯度和紋理的細節保留
+        4. 色彩引導的自適應邊界精修
+        5. 多層次頭髮細節增強
+        6. 智能平滑（根據區域特性調整）
 
         Args:
             image: RGB 圖片
@@ -172,58 +179,153 @@ class PortraitMattingRefiner:
         Returns:
             精修後的 alpha
         """
-        logger.debug("Enhanced portrait matting refinement")
+        logger.debug("Enhanced portrait matting refinement (advanced)")
 
         alpha_float = initial_alpha.astype(np.float32) / 255.0
         gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
 
-        # 1. 檢測邊緣（找出需要精修的區域）
-        edges = self._detect_portrait_edges(gray, alpha_float)
+        # === 階段 1: 增強型邊緣檢測 ===
+        edges, skin_mask = self._detect_portrait_edges(image, gray, alpha_float)
 
-        # 2. 在邊緣區域應用自適應處理
+        # === 階段 2: 肤色引導的 Alpha 優化 ===
+        # 在肤色區域內，alpha 應該接近 1（確定前景）
+        if np.any(skin_mask):
+            # 在肤色區域微調 alpha（增強確定性）
+            skin_boost = 0.1 * focus_strength
+            alpha_float[skin_mask] = np.clip(alpha_float[skin_mask] + skin_boost, 0, 1)
+
+        # === 階段 3: 多尺度自適應邊緣精修 ===
         refined_alpha = self._adaptive_edge_refinement(
             image, alpha_float, edges, focus_strength
         )
 
-        # 3. 頭髮/毛髮細節增強
+        # === 階段 4: 增強型頭髮/毛髮細節處理 ===
         refined_alpha = self._enhance_hair_details(
-            gray, refined_alpha, edges, focus_strength
+            image, gray, refined_alpha, edges, skin_mask, focus_strength
         )
 
-        # 4. 最終平滑（保持細節）
+        # === 階段 5: 邊緣一致性優化 ===
+        # 確保邊緣過渡平滑但保留細節
+        refined_alpha = self._optimize_edge_consistency(
+            refined_alpha, edges, focus_strength
+        )
+
+        # === 階段 6: 智能平滑（保持細節） ===
         refined_alpha = self._detail_preserving_smooth(refined_alpha, edges)
 
         return (refined_alpha * 255).astype(np.uint8)
 
-    def _detect_portrait_edges(self, gray: np.ndarray, alpha: np.ndarray) -> np.ndarray:
+    def _detect_skin_region(self, image: np.ndarray) -> np.ndarray:
         """
-        檢測人像邊緣區域
+        檢測肤色區域（用於人像識別）
+
+        使用 HSV 和 YCrCb 雙重檢測，提高肤色識別準確度
 
         Args:
+            image: RGB 圖片 (H, W, 3), uint8
+
+        Returns:
+            肤色遮罩 (H, W), bool
+        """
+        # 方法 1: HSV 色彩空間
+        bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV).astype(np.float32) / 255.0
+
+        h, s, v = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
+
+        # 肤色範圍（Hue: 0-50, 偏橙紅色）
+        skin_mask_hsv = (
+            ((h * 360 >= SKIN_HUE_MIN) & (h * 360 <= SKIN_HUE_MAX))
+            & (s >= SKIN_SAT_MIN)
+            & (s <= SKIN_SAT_MAX)
+            & (v >= SKIN_VAL_MIN)
+        )
+
+        # 方法 2: YCrCb 色彩空間（補充檢測）
+        ycrcb = cv2.cvtColor(bgr, cv2.COLOR_BGR2YCrCb)
+        y, cr, cb = ycrcb[:, :, 0], ycrcb[:, :, 1], ycrcb[:, :, 2]
+
+        # 肤色範圍（經驗值）
+        skin_mask_ycrcb = (
+            (y > 80)  # noqa: PLR2004
+            & (cr > 133)  # noqa: PLR2004
+            & (cr < 173)  # noqa: PLR2004
+            & (cb > 77)  # noqa: PLR2004
+            & (cb < 127)  # noqa: PLR2004
+        )
+
+        # 結合兩種方法
+        skin_mask = skin_mask_hsv | skin_mask_ycrcb
+
+        # 形態學處理（去除噪點）
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        skin_mask = cv2.morphologyEx(
+            skin_mask.astype(np.uint8), cv2.MORPH_CLOSE, kernel
+        )
+        skin_mask = cv2.morphologyEx(skin_mask.astype(np.uint8), cv2.MORPH_OPEN, kernel)
+
+        return skin_mask.astype(bool)
+
+    def _detect_portrait_edges(
+        self, image: np.ndarray, gray: np.ndarray, alpha: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """
+        增強型人像邊緣檢測
+
+        結合 alpha 梯度、影像邊緣、肤色檢測，更準確識別人像邊界
+
+        Args:
+            image: RGB 圖片 (H, W, 3), uint8
             gray: 灰階圖片 (H, W), uint8
             alpha: Alpha matte (H, W), float32 [0, 1]
 
         Returns:
-            邊緣遮罩 (H, W), bool
+            edge_mask: 邊緣遮罩 (H, W), bool
+            skin_mask: 肤色遮罩 (H, W), bool（用於後續處理）
         """
-        # Alpha 梯度（找出過渡區域）
-        alpha_grad = np.gradient(alpha)
-        alpha_edge = np.sqrt(alpha_grad[0] ** 2 + alpha_grad[1] ** 2)
+        # === 階段 1: Alpha 梯度分析 ===
+        grad_x = cv2.Sobel(alpha, cv2.CV_32F, 1, 0, ksize=3)
+        grad_y = cv2.Sobel(alpha, cv2.CV_32F, 0, 1, ksize=3)
+        alpha_edge = np.sqrt(grad_x**2 + grad_y**2)
 
-        # 影像邊緣（Canny）
-        edges_canny = cv2.Canny(gray, 50, 150)
-        edges_canny = edges_canny.astype(np.float32) / 255.0
+        # === 階段 2: 多尺度 Canny 邊緣 ===
+        # 使用兩種閾值捕捉不同強度的邊緣
+        edges_strong = cv2.Canny(gray, 100, 200)  # 強邊緣
+        edges_weak = cv2.Canny(gray, 30, 100)  # 弱邊緣
+        edges_canny = np.maximum(edges_strong, edges_weak).astype(np.float32) / 255.0
 
-        # 結合兩種邊緣
+        # === 階段 3: 肤色檢測 ===
+        skin_mask = self._detect_skin_region(image)
+
+        # === 階段 4: 智能邊緣融合 ===
+        # 在肤色區域附近的邊緣更可能是人像邊界
+        kernel_dilate = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (21, 21))
+        skin_dilated = cv2.dilate(skin_mask.astype(np.uint8), kernel_dilate)
+
+        # 結合三種邊緣，在肤色區域附近加權
         combined_edges = np.maximum(alpha_edge, edges_canny)
 
-        # 擴展邊緣區域
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
-        edge_mask = cv2.dilate(
-            (combined_edges > EDGE_DETECTION_THRESHOLD).astype(np.uint8), kernel
+        # 在肤色區域附近的邊緣提升權重
+        combined_edges = np.where(
+            skin_dilated > 0, combined_edges * 1.5, combined_edges
         )
 
-        return edge_mask.astype(bool)
+        # === 階段 5: 自適應閾值 ===
+        # 根據邊緣強度分佈自動選擇閾值
+        edge_values = combined_edges[combined_edges > 0]
+        if len(edge_values) > 0:
+            threshold = np.percentile(edge_values, 60)  # 60分位數
+            threshold = max(EDGE_DETECTION_THRESHOLD, min(threshold, 0.3))  # noqa: PLR2004
+        else:
+            threshold = EDGE_DETECTION_THRESHOLD
+
+        # === 階段 6: 擴展邊緣區域 ===
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
+        edge_mask = cv2.dilate(
+            (combined_edges > threshold).astype(np.uint8), kernel
+        ).astype(bool)
+
+        return edge_mask, skin_mask
 
     def _adaptive_edge_refinement(
         self,
@@ -272,20 +374,26 @@ class PortraitMattingRefiner:
 
         return refined
 
-    def _enhance_hair_details(
+    def _enhance_hair_details(  # noqa: PLR0913
         self,
+        image: np.ndarray,
         gray: np.ndarray,
         alpha: np.ndarray,
-        edges: np.ndarray,  # noqa: ARG002
+        edges: np.ndarray,
+        skin_mask: np.ndarray,
         strength: float,
     ) -> np.ndarray:
         """
-        增強頭髮/毛髮細節
+        增強型頭髮/毛髮細節處理
+
+        使用多層次紋理分析和色彩信息來識別和增強頭髮區域
 
         Args:
+            image: RGB 圖片
             gray: 灰階圖片
             alpha: Alpha matte (float32)
             edges: 邊緣遮罩
+            skin_mask: 肤色遮罩
             strength: 精修強度
 
         Returns:
@@ -293,26 +401,166 @@ class PortraitMattingRefiner:
         """
         enhanced = alpha.copy()
 
-        # 檢測細微紋理（可能是頭髮）
+        # === 方法 1: 多尺度紋理檢測（DoG） ===
         # 使用高斯差分（DoG）檢測細節
         blur1 = cv2.GaussianBlur(gray, (3, 3), 1.0)
         blur2 = cv2.GaussianBlur(gray, (9, 9), 3.0)
-        dog = np.abs(blur1.astype(np.float32) - blur2.astype(np.float32))
+        blur3 = cv2.GaussianBlur(gray, (15, 15), 5.0)
 
-        # 在半透明區域，如果有細節紋理，增強 alpha
-        semi_transparent = (alpha > 0.1) & (alpha < 0.9)  # noqa: PLR2004
-        hair_candidate = semi_transparent & (
-            dog > HAIR_TEXTURE_THRESHOLD
-        )  # 有細節紋理的半透明區域
+        # 細尺度紋理（細髮絲）
+        dog_fine = np.abs(blur1.astype(np.float32) - blur2.astype(np.float32))
+        # 粗尺度紋理（髮束）
+        dog_coarse = np.abs(blur2.astype(np.float32) - blur3.astype(np.float32))
 
+        # 結合多尺度
+        texture_map = np.maximum(dog_fine, dog_coarse * 0.5)
+
+        # === 方法 2: 色彩分析（頭髮通常是深色） ===
+        # 計算明度
+        bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV).astype(np.float32) / 255.0
+        value_channel = hsv[:, :, 2]  # V 通道
+
+        # 暗色區域更可能是頭髮（但不是黑色背景）
+        dark_mask = (value_channel < 0.6) & (alpha > 0.1)  # noqa: PLR2004
+
+        # === 方法 3: 空間關係（頭髮通常在肤色區域附近） ===
+        if np.any(skin_mask):
+            # 膨脹肤色區域以包含頭髮可能範圍
+            kernel_hair = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (31, 31))
+            hair_region_mask = cv2.dilate(skin_mask.astype(np.uint8), kernel_hair)
+
+            # 但排除肤色本身
+            hair_region_mask = hair_region_mask.astype(bool) & ~skin_mask
+        else:
+            hair_region_mask = np.ones_like(alpha, dtype=bool)
+
+        # === 階段 4: 識別頭髮候選區域 ===
+        semi_transparent = (alpha > 0.05) & (alpha < 0.95)  # noqa: PLR2004
+
+        # 頭髮必須滿足：
+        # 1. 半透明
+        # 2. 有紋理
+        # 3. 暗色或在邊緣
+        # 4. 在肤色附近
+        hair_candidate = (
+            semi_transparent
+            & (texture_map > HAIR_TEXTURE_THRESHOLD)
+            & (dark_mask | edges)
+            & hair_region_mask
+        )
+
+        # === 階段 5: 增強頭髮區域的 alpha ===
         if np.any(hair_candidate):
-            # 輕微增強這些區域的 alpha（讓細節更明顯）
-            enhancement = dog[hair_candidate] / 255.0 * strength * 0.3
+            # 根據紋理強度和位置調整增強程度
+            # 紋理越強，增強越多
+            texture_strength = np.clip(texture_map / 50.0, 0, 1)
+
+            # 離肤色越近，增強越保守
+            if np.any(skin_mask):
+                dist_transform = cv2.distanceTransform(
+                    (~skin_mask).astype(np.uint8), cv2.DIST_L2, 5
+                )
+                distance_factor = np.clip(dist_transform / 50.0, 0, 1)
+            else:
+                distance_factor = np.ones_like(alpha)
+
+            # 計算增強量
+            enhancement = (
+                texture_strength * distance_factor * strength * 0.25
+            )  # 保守增強
+
+            # 應用增強
             enhanced[hair_candidate] = np.clip(
-                alpha[hair_candidate] + enhancement, 0, 1
+                alpha[hair_candidate] + enhancement[hair_candidate], 0, 1
+            )
+
+        # === 階段 6: 頭髮邊緣柔化 ===
+        # 對識別出的頭髮區域，做輕微的邊緣柔化
+        if np.any(hair_candidate):
+            kernel_smooth = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+            hair_dilated = cv2.dilate(hair_candidate.astype(np.uint8), kernel_smooth)
+
+            smoothed = cv2.GaussianBlur(enhanced, (5, 5), 1.0)
+            blend_factor = 0.3 * strength
+
+            enhanced = np.where(
+                hair_dilated.astype(bool),
+                enhanced * (1 - blend_factor) + smoothed * blend_factor,
+                enhanced,
             )
 
         return enhanced
+
+    def _optimize_edge_consistency(
+        self, alpha: np.ndarray, edges: np.ndarray, strength: float
+    ) -> np.ndarray:
+        """
+        優化邊緣一致性
+
+        確保邊緣過渡平滑，同時保留重要細節
+
+        Args:
+            alpha: Alpha matte (float32)
+            edges: 邊緣遮罩
+            strength: 精修強度
+
+        Returns:
+            優化後的 alpha
+        """
+        optimized = alpha.copy()
+
+        if not np.any(edges):
+            return optimized
+
+        # === 階段 1: 識別邊緣中的異常值 ===
+        # 計算邊緣區域的局部方差
+        kernel_size = 5
+        kernel = np.ones((kernel_size, kernel_size), np.float32) / (kernel_size**2)
+        local_mean = cv2.filter2D(alpha, -1, kernel)
+        local_variance = cv2.filter2D((alpha - local_mean) ** 2, -1, kernel)
+
+        # 高方差區域表示不一致的邊緣
+        high_variance_mask = edges & (local_variance > 0.02)  # noqa: PLR2004
+
+        # === 階段 2: 對不一致區域應用雙邊濾波 ===
+        if np.any(high_variance_mask):
+            # 雙邊濾波保留邊緣但平滑噪聲
+            d = int(5 + strength * 5)  # 鄰域直徑
+            sigma_color = 0.1 * strength
+            sigma_space = d
+
+            filtered = (
+                cv2.bilateralFilter(
+                    (alpha * 255).astype(np.uint8), d, sigma_color * 100, sigma_space
+                ).astype(np.float32)
+                / 255.0
+            )
+
+            # 只在高方差區域替換
+            blend_factor = strength * 0.5
+            optimized[high_variance_mask] = (
+                alpha[high_variance_mask] * (1 - blend_factor)
+                + filtered[high_variance_mask] * blend_factor
+            )
+
+        # === 階段 3: 梯度平滑（確保過渡自然） ===
+        # 計算梯度
+        grad_x = cv2.Sobel(optimized, cv2.CV_32F, 1, 0, ksize=3)
+        grad_y = cv2.Sobel(optimized, cv2.CV_32F, 0, 1, ksize=3)
+        gradient_mag = np.sqrt(grad_x**2 + grad_y**2)
+
+        # 識別梯度過大的區域（不自然的跳變）
+        sharp_edges = edges & (gradient_mag > 0.3)  # noqa: PLR2004
+
+        if np.any(sharp_edges):
+            # 對過於尖銳的邊緣做柔化
+            smoothed = cv2.GaussianBlur(optimized, (5, 5), 1.5)
+            optimized[sharp_edges] = (
+                optimized[sharp_edges] * 0.6 + smoothed[sharp_edges] * 0.4
+            )
+
+        return optimized
 
     def _detail_preserving_smooth(
         self, alpha: np.ndarray, edges: np.ndarray

@@ -54,6 +54,11 @@ WHITE_THRESHOLD = 225
 EDGE_ALPHA_MIN = 0.01
 EDGE_ALPHA_MAX = 0.99
 ALPHA_CHANNEL_INDEX = 3
+GRADIENT_THRESHOLD_HIGH = 0.1  # 高梯度閾值（強邊緣）
+GRADIENT_THRESHOLD_LOW = 0.05  # 低梯度閾值（確定區域）
+ALPHA_THRESHOLD_VERY_TRANSPARENT = 0.3  # 極度半透明閾值
+ALPHA_THRESHOLD_MEDIUM_TRANSPARENT = 0.6  # 中度半透明閾值
+ALPHA_THRESHOLD_CERTAIN_FOREGROUND = 0.95  # 確定前景閾值
 
 
 @BackendRegistry.register("ultra")
@@ -270,7 +275,13 @@ class UltraBackend(BaseBackend):
         self, alpha: np.ndarray, erode_kernel: int, dilate_kernel: int
     ) -> np.ndarray:
         """
-        建立 trimap（三值圖）
+        建立增強型 trimap（三值圖）
+
+        使用多層次分析建立更精確的 trimap：
+        1. 基於閾值的基本分割
+        2. 梯度分析識別真實邊緣
+        3. 多尺度形態學優化
+        4. 自適應調整 unknown region
 
         Args:
             alpha: Alpha matte (0-255)
@@ -280,26 +291,68 @@ class UltraBackend(BaseBackend):
         Returns:
             Trimap: 0=背景, 128=未知區, 255=前景
         """
-        # 二值化
-        _, binary = cv2.threshold(alpha, 127, 255, cv2.THRESH_BINARY)
+        # 階段 1: 自適應閾值二值化（比固定 127 更智能）
+        # 使用 Otsu 方法自動選擇最佳閾值
+        threshold_value, binary = cv2.threshold(
+            alpha, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+        )
+        logger.debug("Trimap threshold (Otsu): %d", threshold_value)
 
-        # 腐蝕得到確定前景
+        # 階段 2: 梯度分析（識別真實邊緣區域）
+        # Alpha 梯度顯示過渡區域
+        alpha_float = alpha.astype(np.float32) / 255.0
+        grad_x = cv2.Sobel(alpha_float, cv2.CV_32F, 1, 0, ksize=3)
+        grad_y = cv2.Sobel(alpha_float, cv2.CV_32F, 0, 1, ksize=3)
+        gradient_magnitude = np.sqrt(grad_x**2 + grad_y**2)
+
+        # 高梯度區域是真實邊緣，應該保留在 unknown region
+        high_gradient_mask = (gradient_magnitude > GRADIENT_THRESHOLD_HIGH).astype(
+            np.uint8
+        ) * 255
+
+        # 階段 3: 多尺度形態學處理
+        # 使用兩種尺度的核來保留細節
+        kernel_erode_fine = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE, (max(3, erode_kernel // 2), max(3, erode_kernel // 2))
+        )
         kernel_erode = cv2.getStructuringElement(
             cv2.MORPH_ELLIPSE, (erode_kernel, erode_kernel)
         )
-        foreground = cv2.erode(binary, kernel_erode, iterations=1)
 
-        # 膨脹得到確定背景（反向）
+        # 細尺度腐蝕（保留更多細節）
+        foreground_fine = cv2.erode(binary, kernel_erode_fine, iterations=1)
+        # 粗尺度腐蝕（確定前景）
+        foreground_coarse = cv2.erode(binary, kernel_erode, iterations=1)
+
+        # 結合兩種尺度：在高梯度區域使用細尺度
+        foreground = np.where(
+            high_gradient_mask > 0, foreground_fine, foreground_coarse
+        )
+
+        # 階段 4: 背景區域處理
         kernel_dilate = cv2.getStructuringElement(
             cv2.MORPH_ELLIPSE, (dilate_kernel, dilate_kernel)
         )
         background_inv = cv2.dilate(binary, kernel_dilate, iterations=1)
         background = cv2.bitwise_not(background_inv)
 
-        # 組合 trimap
+        # 階段 5: 組合 trimap with 梯度引導
         trimap = np.full_like(alpha, TRIMAP_UNKNOWN)  # 預設未知
-        trimap[background == PIXEL_MAX_VALUE] = 0  # 確定背景
-        trimap[foreground == PIXEL_MAX_VALUE] = PIXEL_MAX_VALUE  # 確定前景
+
+        # 確定背景（低 alpha + 低梯度）
+        certain_background = (background == PIXEL_MAX_VALUE) & (
+            gradient_magnitude < GRADIENT_THRESHOLD_LOW
+        )
+        trimap[certain_background] = 0
+
+        # 確定前景（高 alpha + 低梯度）
+        certain_foreground = (foreground == PIXEL_MAX_VALUE) & (
+            gradient_magnitude < GRADIENT_THRESHOLD_LOW
+        )
+        trimap[certain_foreground] = PIXEL_MAX_VALUE
+
+        # Unknown region 自動包含所有高梯度區域
+        # 這確保真實邊緣都會被精修
 
         return trimap
 
@@ -362,13 +415,18 @@ class UltraBackend(BaseBackend):
 
         return (refined_alpha * PIXEL_MAX_VALUE).astype(np.uint8)
 
-    def _apply_advanced_defringing(
+    def _apply_advanced_defringing(  # noqa: PLR0915
         self, image: np.ndarray, alpha: np.ndarray
     ) -> np.ndarray:
         """
-        階段 3: 進階去色邊（多色彩空間分析）
+        階段 3: 增強型進階去色邊（多色彩空間分析）
 
-        使用 RGB + LAB + HSV 多重分析來徹底移除色彩污染
+        使用 RGB + LAB + HSV + YCrCb 多重分析來徹底移除色彩污染
+        改進：
+        1. 添加 YCrCb 色彩空間（更好的色度分離）
+        2. 邊緣分類（強邊緣 vs 弱邊緣）
+        3. 局部自適應校正
+        4. 基於梯度的色彩保留
 
         Args:
             image: RGB 圖片
@@ -384,15 +442,29 @@ class UltraBackend(BaseBackend):
         result = image.astype(np.float32)
         alpha_normalized = alpha.astype(np.float32) / PIXEL_MAX_VALUE
 
-        # 找出邊緣區域（半透明像素）
+        # === 階段 1: 智能邊緣分類 ===
+        # 計算 alpha 梯度
+        grad_x = cv2.Sobel(alpha_normalized, cv2.CV_32F, 1, 0, ksize=3)
+        grad_y = cv2.Sobel(alpha_normalized, cv2.CV_32F, 0, 1, ksize=3)
+        gradient_magnitude = np.sqrt(grad_x**2 + grad_y**2)
+
+        # 邊緣區域分類
         edge_mask = (alpha_normalized > EDGE_ALPHA_MIN) & (
             alpha_normalized < EDGE_ALPHA_MAX
         )
+        strong_edge_mask = edge_mask & (
+            gradient_magnitude > GRADIENT_THRESHOLD_HIGH
+        )  # 強邊緣（頭髮等）
+        weak_edge_mask = edge_mask & (
+            gradient_magnitude <= GRADIENT_THRESHOLD_HIGH
+        )  # 弱邊緣（色邊）
 
         if not np.any(edge_mask):
             return image
 
-        # === 方法 1: RGB 色彩平衡 ===
+        defringe_strength = (self.strength - 0.4) * 1.5  # 0->0.9
+
+        # === 方法 1: RGB 色彩平衡（全邊緣） ===
         r, g, b = result[:, :, 0], result[:, :, 1], result[:, :, 2]
         color_mean = (r + g + b) / 3
 
@@ -401,11 +473,23 @@ class UltraBackend(BaseBackend):
         g_diff = g - color_mean
         b_diff = b - color_mean
 
-        # 在邊緣區域減少色偏
-        defringe_strength = (self.strength - 0.4) * 1.5  # 0->0.9
-        result[:, :, 0][edge_mask] -= r_diff[edge_mask] * defringe_strength * 0.6
-        result[:, :, 1][edge_mask] -= g_diff[edge_mask] * defringe_strength * 0.6
-        result[:, :, 2][edge_mask] -= b_diff[edge_mask] * defringe_strength * 0.6
+        # 對弱邊緣更激進，強邊緣保留細節
+        weak_correction = defringe_strength * 0.8
+        strong_correction = defringe_strength * 0.3
+
+        result[:, :, 0][weak_edge_mask] -= r_diff[weak_edge_mask] * weak_correction
+        result[:, :, 1][weak_edge_mask] -= g_diff[weak_edge_mask] * weak_correction
+        result[:, :, 2][weak_edge_mask] -= b_diff[weak_edge_mask] * weak_correction
+
+        result[:, :, 0][strong_edge_mask] -= (
+            r_diff[strong_edge_mask] * strong_correction
+        )
+        result[:, :, 1][strong_edge_mask] -= (
+            g_diff[strong_edge_mask] * strong_correction
+        )
+        result[:, :, 2][strong_edge_mask] -= (
+            b_diff[strong_edge_mask] * strong_correction
+        )
 
         # === 方法 2: LAB 色彩空間分析（移除亮度不匹配） ===
         lab_result = cv2.cvtColor(result.astype(np.uint8), cv2.COLOR_RGB2LAB).astype(
@@ -426,16 +510,72 @@ class UltraBackend(BaseBackend):
             np.float32
         )
 
-        # === 方法 3: 基於 alpha 的色彩混合調整 ===
-        # 對於非常半透明的邊緣（alpha < 0.5），更激進地去色
-        very_transparent_mask = edge_mask & (alpha_normalized < 0.5)  # noqa: PLR2004
+        # === 方法 3: YCrCb 色度分離（新增，針對色邊特別有效） ===
+        bgr_result = cv2.cvtColor(result.astype(np.uint8), cv2.COLOR_RGB2BGR)
+        ycrcb_result = cv2.cvtColor(bgr_result, cv2.COLOR_BGR2YCrCb).astype(np.float32)
+
+        # 對弱邊緣，壓制 Cr/Cb 通道（色度）向中性值（128）
+        # 這對移除綠邊、紫邊等色彩污染特別有效
+        ycrcb_result[:, :, 1][weak_edge_mask] = (
+            ycrcb_result[:, :, 1][weak_edge_mask] * (1 - defringe_strength * 0.4)
+            + 128 * defringe_strength * 0.4
+        )
+        ycrcb_result[:, :, 2][weak_edge_mask] = (
+            ycrcb_result[:, :, 2][weak_edge_mask] * (1 - defringe_strength * 0.4)
+            + 128 * defringe_strength * 0.4
+        )
+
+        bgr_result = cv2.cvtColor(ycrcb_result.astype(np.uint8), cv2.COLOR_YCrCb2BGR)
+        result = cv2.cvtColor(bgr_result, cv2.COLOR_BGR2RGB).astype(np.float32)
+
+        # === 方法 4: 基於 alpha 的分層處理 ===
+        # 極度半透明（alpha < 0.3）：激進去色
+        very_transparent_mask = edge_mask & (
+            alpha_normalized < ALPHA_THRESHOLD_VERY_TRANSPARENT
+        )
         if np.any(very_transparent_mask):
-            # 向灰階混合
             gray_value = np.mean(result, axis=2, keepdims=True)
             result[very_transparent_mask] = (
-                result[very_transparent_mask] * 0.7
-                + gray_value[very_transparent_mask] * 0.3
+                result[very_transparent_mask] * 0.5
+                + gray_value[very_transparent_mask] * 0.5
             )
+
+        # 中度半透明（0.3 <= alpha < 0.6）：溫和去色
+        medium_transparent_mask = (
+            edge_mask
+            & (alpha_normalized >= ALPHA_THRESHOLD_VERY_TRANSPARENT)
+            & (alpha_normalized < ALPHA_THRESHOLD_MEDIUM_TRANSPARENT)
+        )
+        if np.any(medium_transparent_mask):
+            gray_value = np.mean(result, axis=2, keepdims=True)
+            result[medium_transparent_mask] = (
+                result[medium_transparent_mask] * 0.75
+                + gray_value[medium_transparent_mask] * 0.25
+            )
+
+        # === 方法 5: 局部自適應校正（基於鄰域） ===
+        # 對每個邊緣像素，參考其鄰近的確定前景色
+        if np.any(edge_mask):
+            # 膨脹邊緣遮罩找到鄰域
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+            edge_dilated = cv2.dilate(edge_mask.astype(np.uint8), kernel).astype(bool)
+
+            # 確定前景區域
+            certain_foreground = (
+                alpha_normalized > ALPHA_THRESHOLD_CERTAIN_FOREGROUND
+            ) & ~edge_dilated
+
+            if np.any(certain_foreground):
+                # 使用確定前景的平均色進行引導
+                fg_mean_color = np.mean(
+                    result[certain_foreground].reshape(-1, 3), axis=0
+                )
+
+                # 在邊緣區域向前景色微調（保留細節）
+                blend_factor = defringe_strength * 0.15
+                result[edge_mask] = result[edge_mask] * (1 - blend_factor) + (
+                    fg_mean_color * blend_factor
+                )
 
         return np.clip(result, 0, 255).astype(np.uint8)
 

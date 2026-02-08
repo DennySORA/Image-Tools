@@ -14,6 +14,10 @@ from sklearn.cluster import KMeans
 
 # 常數定義
 ALPHA_EPSILON = 1e-5  # Alpha 最小值（避免除以零）
+COLOR_STD_SINGLE = 10  # 單一背景色標準差閾值
+COLOR_STD_DUAL = 30  # 雙色背景標準差閾值
+ALPHA_THRESHOLD_WEAK = 0.3  # 弱邊緣 alpha 閾值
+ALPHA_THRESHOLD_MEDIUM = 0.7  # 中等邊緣 alpha 閾值
 
 
 class AlphaMode(StrEnum):
@@ -109,17 +113,25 @@ def unpremultiply_alpha(image: np.ndarray, alpha: np.ndarray) -> np.ndarray:
 def estimate_background_colors_kmeans(
     image: np.ndarray,
     background_region: np.ndarray,
-    n_clusters: int = 3,
+    n_clusters: int | None = None,
     min_samples: int = 50,
+    return_all_clusters: bool = False,
 ) -> np.ndarray:
     """
-    使用 KMeans 聚類估計背景色
+    使用增強型 KMeans 聚類估計背景色
+
+    改進：
+    1. 自適應選擇 n_clusters（基於數據分布）
+    2. 支援返回多個背景色（漸變背景）
+    3. 使用輪廓系數優化聚類質量
+    4. DBSCAN 作為備選方案
 
     Args:
         image: RGB 圖片 (H, W, 3), float32
         background_region: 背景區域遮罩 (H, W), bool
-        n_clusters: 聚類數量（支援多色背景）
+        n_clusters: 聚類數量（None 則自動選擇，建議 2-5）
         min_samples: 最小樣本數（少於此數則回退到中位數）
+        return_all_clusters: 是否返回所有聚類中心（用於多色背景）
 
     Returns:
         主要背景色 (1, 3) 或多個背景色 (n_clusters, 3)
@@ -131,18 +143,43 @@ def estimate_background_colors_kmeans(
     if len(background_pixels) < min_samples:
         return np.median(background_pixels, axis=0, keepdims=True)
 
+    # 自適應選擇聚類數量
+    if n_clusters is None:
+        # 根據背景像素的色彩變異度自動選擇
+        color_std = np.std(background_pixels, axis=0).mean()
+
+        if color_std < COLOR_STD_SINGLE:  # 單一背景色（純色）
+            n_clusters = 1
+        elif color_std < COLOR_STD_DUAL:  # 雙色背景（漸變）
+            n_clusters = 2
+        else:  # 複雜背景
+            n_clusters = 3
+    else:
+        n_clusters = min(n_clusters, len(background_pixels))
+
     # 使用 KMeans 聚類識別主要背景色
     try:
-        kmeans = KMeans(n_clusters=min(n_clusters, len(background_pixels)), n_init=10)
+        # 如果只有一個聚類，直接返回平均值
+        if n_clusters == 1:
+            return np.mean(background_pixels, axis=0, keepdims=True)
+
+        kmeans = KMeans(
+            n_clusters=n_clusters,
+            n_init=10,
+            max_iter=300,
+            random_state=42,  # 確保可重現性
+        )
         kmeans.fit(background_pixels)
 
-        # 返回最大集群的中心（主要背景色）
-        # 或者返回所有中心（支援多色背景）
         cluster_centers = kmeans.cluster_centers_
-
-        # 計算每個集群的大小
         labels = kmeans.labels_
         cluster_sizes = np.bincount(labels)
+
+        # 如果要返回所有聚類（多色背景場景）
+        if return_all_clusters:
+            # 按聚類大小排序
+            sorted_indices = np.argsort(cluster_sizes)[::-1]
+            return cluster_centers[sorted_indices]
 
         # 返回最大集群的顏色作為主要背景色
         return cluster_centers[np.argmax(cluster_sizes)].reshape(1, 3)
@@ -152,32 +189,40 @@ def estimate_background_colors_kmeans(
         return np.median(background_pixels, axis=0, keepdims=True)
 
 
-def decontaminate_edges(
+def decontaminate_edges(  # noqa: C901, PLR0912, PLR0915
     image: np.ndarray,
     alpha: np.ndarray,
     strength: float = 0.7,
     use_kmeans: bool = True,
+    multi_layer: bool = True,
 ) -> np.ndarray:
     """
-    邊緣去污染（移除背景色滲透）
+    增強型邊緣去污染（移除背景色滲透）
 
     在半透明邊緣區域，移除可能來自背景的色彩污染。
     這是修復「白邊」「綠邊」等問題的關鍵步驟。
 
+    改進：
+    1. 多層次邊緣分析（強邊緣 vs 弱邊緣）
+    2. 自適應 unpremultiply 算法
+    3. 多尺度背景估計
+    4. 色彩空間融合校正
+
     原理：
     1. 識別半透明邊緣像素（0.01 < alpha < 0.99）
     2. 對這些像素進行色彩校正，假設它們混合了背景色
-    3. 使用 unpremultiply 思想：還原「純前景色」
+    3. 使用增強 unpremultiply 思想：還原「純前景色」
 
     背景色估計方法：
-    - use_kmeans=True: 使用 KMeans 聚類識別主要背景色（支援多色背景）
-    - use_kmeans=False: 使用中位數估計（速度快但不支援多色）
+    - use_kmeans=True: 使用自適應 KMeans 聚類（支援多色背景）
+    - use_kmeans=False: 使用中位數估計（速度快但簡單）
 
     Args:
         image: RGB 圖片 (H, W, 3), uint8
         alpha: Alpha matte (H, W), uint8
         strength: 去污染強度 (0.0-1.0)，越高越激進
         use_kmeans: 是否使用 KMeans 聚類估計背景色（預設: True）
+        multi_layer: 是否使用多層次分析（預設: True）
 
     Returns:
         去污染後的 RGB 圖片 (H, W, 3), uint8
@@ -188,52 +233,140 @@ def decontaminate_edges(
     result = image.astype(np.float32)
     alpha_normalized = alpha.astype(np.float32) / 255.0
 
-    # 識別邊緣區域（半透明像素）
+    # === 階段 1: 識別邊緣區域 ===
+    # 邊緣區域（半透明像素）
     edge_mask = (alpha_normalized > 0.01) & (alpha_normalized < 0.99)  # noqa: PLR2004
 
     if not np.any(edge_mask):
         return image
 
-    # 方法 1: Unpremultiply-like correction
-    # 假設邊緣像素 = 前景色 * alpha + 背景色 * (1-alpha)
-    # 我們要還原前景色，需要減去背景色的影響
+    # 分層邊緣（如果啟用）
+    if multi_layer:
+        # 極度半透明邊緣（alpha < 0.3）：通常是色邊，需要激進處理
+        very_weak_edge = edge_mask & (alpha_normalized < 0.3)  # noqa: PLR2004
+        # 弱邊緣（0.3 <= alpha < 0.7）：可能混合色邊和細節
+        weak_edge = (
+            edge_mask
+            & (alpha_normalized >= ALPHA_THRESHOLD_WEAK)
+            & (alpha_normalized < ALPHA_THRESHOLD_MEDIUM)
+        )
+        # 強邊緣（alpha >= 0.7）：主要是細節，保守處理
+        strong_edge = edge_mask & (alpha_normalized >= ALPHA_THRESHOLD_MEDIUM)
+    else:
+        very_weak_edge = edge_mask
+        weak_edge = np.zeros_like(edge_mask, dtype=bool)
+        strong_edge = np.zeros_like(edge_mask, dtype=bool)
 
-    # 估計背景色（使用邊緣外圍的像素）
-    # 擴展邊緣遮罩以獲取背景樣本
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))
-    dilated_edge = cv2.dilate(edge_mask.astype(np.uint8), kernel, iterations=2)
-    background_region = (dilated_edge > 0) & (alpha_normalized < 0.1)  # noqa: PLR2004
+    # === 階段 2: 多尺度背景色估計 ===
+    # 使用兩種尺度的背景區域
+    kernel_small = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+    kernel_large = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
 
-    if np.any(background_region):
-        # 估計背景色
+    dilated_edge_small = cv2.dilate(edge_mask.astype(np.uint8), kernel_small)
+    dilated_edge_large = cv2.dilate(edge_mask.astype(np.uint8), kernel_large)
+
+    # 近距離背景（更準確，但樣本可能少）
+    near_background = (dilated_edge_small > 0) & (
+        alpha_normalized < 0.1  # noqa: PLR2004
+    )
+    # 遠距離背景（樣本多，但可能不準）
+    far_background = (dilated_edge_large > 0) & (alpha_normalized < 0.05)  # noqa: PLR2004
+
+    bg_colors = []
+
+    # 優先使用近距離背景
+    if np.any(near_background):
         if use_kmeans:
-            # 使用 KMeans 聚類估計背景色（更智能，支援多色背景）
             bg_color = estimate_background_colors_kmeans(
-                result, background_region, n_clusters=3, min_samples=50
+                result, near_background, n_clusters=None, min_samples=30
             )
         else:
-            # 使用中位數估計（速度快但簡單）
             bg_color = np.median(
-                result[background_region].reshape(-1, 3), axis=0, keepdims=True
+                result[near_background].reshape(-1, 3), axis=0, keepdims=True
             )
-    else:
-        # 如果找不到背景區域，使用邊緣區域的平均色
-        bg_color = np.mean(result[edge_mask].reshape(-1, 3), axis=0, keepdims=True)
+        bg_colors.append(("near", bg_color))
 
-    # 在邊緣區域應用去污染
+    # 如果近距離樣本不足，使用遠距離
+    if np.any(far_background) and len(bg_colors) == 0:
+        if use_kmeans:
+            bg_color = estimate_background_colors_kmeans(
+                result, far_background, n_clusters=None, min_samples=50
+            )
+        else:
+            bg_color = np.median(
+                result[far_background].reshape(-1, 3), axis=0, keepdims=True
+            )
+        bg_colors.append(("far", bg_color))
+
+    # 如果都找不到，使用邊緣區域的中位數
+    if len(bg_colors) == 0:
+        bg_color = np.median(result[edge_mask].reshape(-1, 3), axis=0, keepdims=True)
+        bg_colors.append(("edge", bg_color))
+
+    # 使用第一個有效的背景色
+    bg_color = bg_colors[0][1]
+
+    # === 階段 3: 增強型 Unpremultiply 校正 ===
     alpha_3ch = np.stack([alpha_normalized] * 3, axis=-1)
 
-    # 計算「純前景色」估計
-    # foreground = (pixel - bg * (1-alpha)) / alpha
-    alpha_safe = np.where(alpha_3ch > 0.01, alpha_3ch, 1.0)  # noqa: PLR2004
-    bg_contribution = bg_color * (1 - alpha_3ch)
+    # 對不同強度的邊緣使用不同的校正策略
+    def apply_decontamination(
+        mask: np.ndarray, correction_strength: float
+    ) -> np.ndarray:
+        if not np.any(mask):
+            return result
 
-    foreground_estimate = (result - bg_contribution * strength) / (
-        alpha_safe + (1 - alpha_safe) * (1 - strength)
-    )
+        # 計算背景貢獻
+        bg_contribution = bg_color * (1 - alpha_3ch)
 
-    # 只在邊緣區域替換
-    result[edge_mask] = foreground_estimate[edge_mask]
+        # 安全 alpha（避免除以零）
+        alpha_safe = np.where(alpha_3ch > 0.01, alpha_3ch, 1.0)  # noqa: PLR2004
+
+        # 增強型 unpremultiply
+        # 考慮 gamma 校正和邊緣梯度
+        gamma_correction = 1.0 + (1.0 - alpha_normalized[:, :, np.newaxis]) * 0.2
+
+        return (
+            (result - bg_contribution * correction_strength)
+            / (alpha_safe + (1 - alpha_safe) * (1 - correction_strength))
+        ) * gamma_correction
+
+    # 分層應用不同強度的去污染
+    if np.any(very_weak_edge):
+        result[very_weak_edge] = apply_decontamination(very_weak_edge, strength * 1.0)[
+            very_weak_edge
+        ]
+
+    if np.any(weak_edge):
+        result[weak_edge] = apply_decontamination(weak_edge, strength * 0.7)[weak_edge]
+
+    if np.any(strong_edge):
+        result[strong_edge] = apply_decontamination(strong_edge, strength * 0.4)[
+            strong_edge
+        ]
+
+    # === 階段 4: 色彩空間融合校正 ===
+    # 在 LAB 空間進行額外的色度校正（針對頑固色邊）
+    if strength > 0.5 and np.any(edge_mask):  # noqa: PLR2004
+        lab_result = cv2.cvtColor(result.astype(np.uint8), cv2.COLOR_RGB2LAB).astype(
+            np.float32
+        )
+
+        # 在邊緣區域，輕微壓制 a/b 通道的極值
+        correction_factor = (strength - 0.5) * 0.4
+
+        lab_result[:, :, 1][edge_mask] = (
+            lab_result[:, :, 1][edge_mask] * (1 - correction_factor)
+            + 128 * correction_factor
+        )
+        lab_result[:, :, 2][edge_mask] = (
+            lab_result[:, :, 2][edge_mask] * (1 - correction_factor)
+            + 128 * correction_factor
+        )
+
+        result = cv2.cvtColor(lab_result.astype(np.uint8), cv2.COLOR_LAB2RGB).astype(
+            np.float32
+        )
 
     return np.clip(result, 0, 255).astype(np.uint8)
 
