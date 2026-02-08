@@ -30,7 +30,16 @@ from torchvision import transforms  # type: ignore[import-untyped]
 from transformers import AutoModelForImageSegmentation
 
 from src.backends.registry import BackendRegistry
-from src.common import ColorFilter, ColorFilterConfig
+from src.common import (
+    AlphaConfig,
+    ColorFilter,
+    ColorFilterConfig,
+    ResolutionConfig,
+    ResolutionMode,
+    calculate_adaptive_resolution,
+    decontaminate_edges,
+    premultiply_alpha,
+)
 from src.core.interfaces import BaseBackend
 
 
@@ -65,18 +74,20 @@ class UltraBackend(BaseBackend):
 
     # RMBG-2.0 模型配置
     MODEL_NAME: ClassVar[str] = "briaai/RMBG-2.0"
-    INPUT_SIZE: ClassVar[tuple[int, int]] = (1024, 1024)
+    # INPUT_SIZE 現在動態決定，基於 ResolutionConfig
 
     # Trimap 參數
     TRIMAP_ERODE_KERNEL: ClassVar[int] = 10  # 腐蝕核大小
     TRIMAP_DILATE_KERNEL: ClassVar[int] = 10  # 膨脹核大小
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         model: str = "auto",  # noqa: ARG002
         strength: float = 0.8,
         color_filter: ColorFilterConfig | None = None,
         use_trimap_refine: bool = True,
+        alpha_config: AlphaConfig | None = None,
+        resolution_config: ResolutionConfig | None = None,
         device: str | None = None,
     ):
         """
@@ -90,11 +101,15 @@ class UltraBackend(BaseBackend):
                      - 0.8-1.0: 激進（最大移除，可能損失細節）
             color_filter: 色彩過濾設定
             use_trimap_refine: 是否使用 trimap refinement（推薦開啟）
+            alpha_config: Alpha 處理設定（邊緣去污染、輸出模式）
+            resolution_config: 解析度設定（1024/1536/2048/adaptive）
             device: 計算設備（cuda/cpu），None 則自動選擇
         """
         super().__init__(strength=strength)
         self.color_filter = color_filter or ColorFilterConfig()
         self.use_trimap_refine = use_trimap_refine
+        self.alpha_config = alpha_config or AlphaConfig()
+        self.resolution_config = resolution_config or ResolutionConfig()
 
         # 設備配置
         if device is None:
@@ -112,6 +127,11 @@ class UltraBackend(BaseBackend):
         logger.info("  Strength: %.2f", self.strength)
         logger.info("  Trimap refinement: %s", self.use_trimap_refine)
         logger.info("  Color filter: %s", self.color_filter.color.value)
+        logger.info("  Alpha mode: %s", self.alpha_config.mode.value)
+        logger.info("  Resolution mode: %s", self.resolution_config.mode.value)
+        logger.info(
+            "  Edge decontamination: %s", self.alpha_config.edge_decontamination
+        )
 
     def load_model(self) -> None:
         """載入 RMBG-2.0 模型"""
@@ -125,14 +145,8 @@ class UltraBackend(BaseBackend):
         self._model.to(self.device)
         self._model.eval()
 
-        # 設置圖像轉換
-        self._transform = transforms.Compose(
-            [
-                transforms.Resize(self.INPUT_SIZE),
-                transforms.ToTensor(),
-                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-            ]
-        )
+        # 注意：transform 現在在 _apply_rmbg_segmentation 中動態建立
+        # 以支持不同的解析度模式
 
         logger.info("RMBG-2.0 model loaded successfully")
 
@@ -146,14 +160,35 @@ class UltraBackend(BaseBackend):
         Returns:
             Alpha matte (0-255 uint8 numpy array)
         """
-        if self._model is None or self._transform is None:
+        if self._model is None:
             raise RuntimeError("Model not loaded")
 
         # 保存原始尺寸
         original_size = image.size
 
+        # 根據解析度配置決定推論尺寸
+        inference_size = self._get_inference_size(original_size)
+
+        logger.debug(
+            "Resolution: %dx%d → %dx%d (mode: %s)",
+            original_size[0],
+            original_size[1],
+            inference_size[0],
+            inference_size[1],
+            self.resolution_config.mode.value,
+        )
+
+        # 動態建立轉換器
+        transform = transforms.Compose(
+            [
+                transforms.Resize(inference_size),
+                transforms.ToTensor(),
+                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+            ]
+        )
+
         # 轉換並推論
-        input_tensor = self._transform(image).unsqueeze(0).to(self.device)
+        input_tensor = transform(image).unsqueeze(0).to(self.device)
 
         with torch.no_grad():
             output = self._model(input_tensor)[0][0]
@@ -162,8 +197,36 @@ class UltraBackend(BaseBackend):
         alpha = output.cpu().numpy()
         alpha = (alpha * PIXEL_MAX_VALUE).astype(np.uint8)
 
-        # Resize 回原始尺寸
-        return cv2.resize(alpha, original_size, interpolation=cv2.INTER_LINEAR)  # type: ignore[no-any-return]
+        # Resize 回原始尺寸（使用高品質插值）
+        return cv2.resize(alpha, original_size, interpolation=cv2.INTER_CUBIC)  # type: ignore[no-any-return]
+
+    def _get_inference_size(self, original_size: tuple[int, int]) -> tuple[int, int]:
+        """
+        根據配置決定推論解析度
+
+        Args:
+            original_size: 原始圖片尺寸 (width, height)
+
+        Returns:
+            推論解析度 (width, height)
+        """
+        mode = self.resolution_config.mode
+
+        if mode == ResolutionMode.ADAPTIVE:
+            # 自適應模式：根據原圖大小智能選擇
+            return calculate_adaptive_resolution(
+                original_size, self.resolution_config.max_size
+            )
+
+        # 固定解析度模式
+        size_map = {
+            ResolutionMode.FIXED_1024: 1024,
+            ResolutionMode.FIXED_1536: 1536,
+            ResolutionMode.FIXED_2048: 2048,
+        }
+
+        target_size = size_map.get(mode, 1024)
+        return (target_size, target_size)
 
     def _create_trimap(
         self, alpha: np.ndarray, erode_kernel: int, dilate_kernel: int
@@ -448,6 +511,18 @@ class UltraBackend(BaseBackend):
             # 階段 4: 色彩過濾（如果啟用）
             alpha = self._apply_color_filter(image_np, alpha)
             logger.debug("Stage 4: Color filter complete")
+
+            # 階段 5: 邊緣去污染（修復背景色滲透）
+            if self.alpha_config.edge_decontamination:
+                image_np = decontaminate_edges(
+                    image_np, alpha, self.alpha_config.decontamination_strength
+                )
+                logger.debug("Stage 5: Edge decontamination complete")
+
+            # 階段 6: Alpha 模式處理
+            if self.alpha_config.mode.value == "premultiplied":
+                image_np = premultiply_alpha(image_np, alpha)
+                logger.debug("Stage 6: Converted to premultiplied alpha")
 
             # 組合 RGBA
             rgba = np.dstack([image_np, alpha])
