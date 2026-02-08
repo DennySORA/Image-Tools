@@ -7,6 +7,7 @@
 from .backgroundremover import BackgroundRemoverBackend
 from .gemini_watermark import GeminiWatermarkBackend
 from .greenscreen import GreenScreenBackend
+from .image_splitter import ImageSplitterBackend
 from .registry import BackendRegistry
 from .rembg import RembgBackend
 from .transparent_bg import TransparentBgBackend
@@ -19,4 +20,5 @@ __all__ = [
     "BackgroundRemoverBackend",
     "GreenScreenBackend",
     "GeminiWatermarkBackend",
+    "ImageSplitterBackend",
 ]
