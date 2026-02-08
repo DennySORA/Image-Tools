@@ -1,3 +1,6 @@
+# TODO: Refactor - This file is 585 lines (exceeds 500-line hard cap)
+# Consider splitting into: detector.py (object detection), optimizer.py (threshold optimization), core.py (main logic)
+
 """
 圖片分割工具模組
 
