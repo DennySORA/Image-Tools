@@ -9,7 +9,7 @@ from collections.abc import Callable
 from typing import Any, cast
 
 from src.core.interfaces import BackendProtocol, BaseBackend
-from src.core.models import BackendInfo, ModelInfo
+from src.data_model import BackendInfo, ModelInfo
 
 
 class BackendRegistry:

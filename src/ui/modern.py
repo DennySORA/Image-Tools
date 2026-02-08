@@ -16,7 +16,7 @@ from InquirerPy.base.control import Choice
 from InquirerPy.separator import Separator
 
 from src.backends.registry import BackendRegistry
-from src.core.models import ProcessConfig
+from src.data_model import ProcessConfig
 from src.ui.history import PathHistory
 
 

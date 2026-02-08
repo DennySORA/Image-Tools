@@ -9,13 +9,14 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from .interfaces import BackendProtocol
-from .models import (
+from src.data_model import (
     SUPPORTED_EXTENSIONS,
     ProcessConfig,
     ProcessResult,
     is_supported_image,
 )
+
+from .interfaces import BackendProtocol
 
 
 class ImageProcessor:

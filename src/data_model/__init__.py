@@ -1,13 +1,10 @@
 """
-資料模型模組 (相容性層)
+資料模型模組
 
-DEPRECATED: 此模組已遷移至 src.data_model
-請改用 from src.data_model import ...
-
-保留此檔案以提供向後相容性
+提供應用程式的核心資料結構，使用 Pydantic 進行驗證
 """
 
-from src.data_model import (
+from .core import (
     SUPPORTED_EXTENSIONS,
     BackendInfo,
     ImageFile,
