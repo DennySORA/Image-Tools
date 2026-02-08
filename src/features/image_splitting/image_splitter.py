@@ -8,10 +8,10 @@ import logging
 from pathlib import Path
 from typing import ClassVar
 
-from src.core.interfaces import BaseBackend
-from .splitter import ImageSplitter, SplitConfig
-
 from src.backends.registry import BackendRegistry
+from src.core.interfaces import BaseBackend
+
+from .splitter import ImageSplitter, SplitConfig
 
 
 logger = logging.getLogger(__name__)

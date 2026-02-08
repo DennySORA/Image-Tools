@@ -6,4 +6,5 @@
 
 from .app import AppSettings, settings
 
+
 __all__ = ["AppSettings", "settings"]

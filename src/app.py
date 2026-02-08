@@ -5,7 +5,6 @@
 """
 
 import logging
-from pathlib import Path
 
 from src.backends.registry import BackendRegistry
 from src.common import ColorFilter, ColorFilterConfig

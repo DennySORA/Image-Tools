@@ -14,6 +14,7 @@ from .core import (
     is_supported_image,
 )
 
+
 __all__ = [
     "BackendInfo",
     "ImageFile",

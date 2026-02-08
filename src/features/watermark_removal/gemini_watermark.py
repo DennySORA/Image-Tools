@@ -17,9 +17,8 @@ from typing import ClassVar
 
 from PIL import Image
 
-from src.core.interfaces import BaseBackend
-
 from src.backends.registry import BackendRegistry
+from src.core.interfaces import BaseBackend
 
 
 logger = logging.getLogger(__name__)

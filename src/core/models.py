@@ -17,6 +17,7 @@ from src.data_model import (
     is_supported_image,
 )
 
+
 __all__ = [
     "BackendInfo",
     "ImageFile",

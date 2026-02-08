@@ -6,4 +6,5 @@
 
 from .color_filter import ColorFilter, ColorFilterConfig
 
+
 __all__ = ["ColorFilter", "ColorFilterConfig"]

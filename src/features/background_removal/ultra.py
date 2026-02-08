@@ -28,10 +28,9 @@ import torch
 from PIL import Image
 from torchvision import transforms  # type: ignore[import-untyped]
 
+from src.backends.registry import BackendRegistry
 from src.common import ColorFilter, ColorFilterConfig
 from src.core.interfaces import BaseBackend
-
-from src.backends.registry import BackendRegistry
 
 
 logger = logging.getLogger(__name__)
