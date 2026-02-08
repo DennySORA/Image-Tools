@@ -11,6 +11,7 @@ from .alpha_config import (
     ResolutionMode,
     calculate_adaptive_resolution,
     decontaminate_edges,
+    estimate_background_colors_kmeans,
     premultiply_alpha,
     unpremultiply_alpha,
 )
@@ -27,5 +28,6 @@ __all__ = [
     "premultiply_alpha",
     "unpremultiply_alpha",
     "decontaminate_edges",
+    "estimate_background_colors_kmeans",
     "calculate_adaptive_resolution",
 ]

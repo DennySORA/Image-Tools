@@ -9,6 +9,7 @@ from enum import StrEnum
 import cv2
 import numpy as np
 from pydantic import BaseModel, Field
+from sklearn.cluster import KMeans
 
 
 # 常數定義
@@ -105,8 +106,57 @@ def unpremultiply_alpha(image: np.ndarray, alpha: np.ndarray) -> np.ndarray:
     return np.clip(unpremul, 0, 255).astype(np.uint8)
 
 
+def estimate_background_colors_kmeans(
+    image: np.ndarray,
+    background_region: np.ndarray,
+    n_clusters: int = 3,
+    min_samples: int = 50,
+) -> np.ndarray:
+    """
+    使用 KMeans 聚類估計背景色
+
+    Args:
+        image: RGB 圖片 (H, W, 3), float32
+        background_region: 背景區域遮罩 (H, W), bool
+        n_clusters: 聚類數量（支援多色背景）
+        min_samples: 最小樣本數（少於此數則回退到中位數）
+
+    Returns:
+        主要背景色 (1, 3) 或多個背景色 (n_clusters, 3)
+    """
+    # 提取背景像素
+    background_pixels = image[background_region].reshape(-1, 3)
+
+    # 如果樣本太少，使用中位數
+    if len(background_pixels) < min_samples:
+        return np.median(background_pixels, axis=0, keepdims=True)
+
+    # 使用 KMeans 聚類識別主要背景色
+    try:
+        kmeans = KMeans(n_clusters=min(n_clusters, len(background_pixels)), n_init=10)
+        kmeans.fit(background_pixels)
+
+        # 返回最大集群的中心（主要背景色）
+        # 或者返回所有中心（支援多色背景）
+        cluster_centers = kmeans.cluster_centers_
+
+        # 計算每個集群的大小
+        labels = kmeans.labels_
+        cluster_sizes = np.bincount(labels)
+
+        # 返回最大集群的顏色作為主要背景色
+        return cluster_centers[np.argmax(cluster_sizes)].reshape(1, 3)
+
+    except Exception:  # noqa: BLE001
+        # 如果 KMeans 失敗，回退到中位數
+        return np.median(background_pixels, axis=0, keepdims=True)
+
+
 def decontaminate_edges(
-    image: np.ndarray, alpha: np.ndarray, strength: float = 0.7
+    image: np.ndarray,
+    alpha: np.ndarray,
+    strength: float = 0.7,
+    use_kmeans: bool = True,
 ) -> np.ndarray:
     """
     邊緣去污染（移除背景色滲透）
@@ -119,10 +169,15 @@ def decontaminate_edges(
     2. 對這些像素進行色彩校正，假設它們混合了背景色
     3. 使用 unpremultiply 思想：還原「純前景色」
 
+    背景色估計方法：
+    - use_kmeans=True: 使用 KMeans 聚類識別主要背景色（支援多色背景）
+    - use_kmeans=False: 使用中位數估計（速度快但不支援多色）
+
     Args:
         image: RGB 圖片 (H, W, 3), uint8
         alpha: Alpha matte (H, W), uint8
         strength: 去污染強度 (0.0-1.0)，越高越激進
+        use_kmeans: 是否使用 KMeans 聚類估計背景色（預設: True）
 
     Returns:
         去污染後的 RGB 圖片 (H, W, 3), uint8
@@ -151,9 +206,16 @@ def decontaminate_edges(
 
     if np.any(background_region):
         # 估計背景色
-        bg_color = np.median(
-            result[background_region].reshape(-1, 3), axis=0, keepdims=True
-        )
+        if use_kmeans:
+            # 使用 KMeans 聚類估計背景色（更智能，支援多色背景）
+            bg_color = estimate_background_colors_kmeans(
+                result, background_region, n_clusters=3, min_samples=50
+            )
+        else:
+            # 使用中位數估計（速度快但簡單）
+            bg_color = np.median(
+                result[background_region].reshape(-1, 3), axis=0, keepdims=True
+            )
     else:
         # 如果找不到背景區域，使用邊緣區域的平均色
         bg_color = np.mean(result[edge_mask].reshape(-1, 3), axis=0, keepdims=True)

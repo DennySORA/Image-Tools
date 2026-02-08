@@ -41,6 +41,7 @@ from src.common import (
     premultiply_alpha,
 )
 from src.core.interfaces import BaseBackend
+from src.features.background_removal.portrait_matting import PortraitMattingRefiner
 
 
 logger = logging.getLogger(__name__)
@@ -86,6 +87,8 @@ class UltraBackend(BaseBackend):
         strength: float = 0.8,
         color_filter: ColorFilterConfig | None = None,
         use_trimap_refine: bool = True,
+        use_portrait_matting: bool = False,
+        portrait_matting_strength: float = 0.7,
         alpha_config: AlphaConfig | None = None,
         resolution_config: ResolutionConfig | None = None,
         device: str | None = None,
@@ -101,6 +104,8 @@ class UltraBackend(BaseBackend):
                      - 0.8-1.0: 激進（最大移除，可能損失細節）
             color_filter: 色彩過濾設定
             use_trimap_refine: 是否使用 trimap refinement（推薦開啟）
+            use_portrait_matting: 是否啟用人像 matting 精修（針對頭髮/邊緣）
+            portrait_matting_strength: 人像精修強度 (0.1-1.0)
             alpha_config: Alpha 處理設定（邊緣去污染、輸出模式）
             resolution_config: 解析度設定（1024/1536/2048/adaptive）
             device: 計算設備（cuda/cpu），None 則自動選擇
@@ -108,6 +113,8 @@ class UltraBackend(BaseBackend):
         super().__init__(strength=strength)
         self.color_filter = color_filter or ColorFilterConfig()
         self.use_trimap_refine = use_trimap_refine
+        self.use_portrait_matting = use_portrait_matting
+        self.portrait_matting_strength = portrait_matting_strength
         self.alpha_config = alpha_config or AlphaConfig()
         self.resolution_config = resolution_config or ResolutionConfig()
 
@@ -121,11 +128,17 @@ class UltraBackend(BaseBackend):
         self._model: Any = None
         self._transform: transforms.Compose | None = None
 
+        # 人像 matting 精修器（延遲初始化）
+        self._portrait_refiner: PortraitMattingRefiner | None = None
+
         logger.info("Ultra backend initialized (NON-COMMERCIAL USE ONLY)")
         logger.info("  Model: BRIA RMBG-2.0")
         logger.info("  Device: %s", self.device)
         logger.info("  Strength: %.2f", self.strength)
         logger.info("  Trimap refinement: %s", self.use_trimap_refine)
+        logger.info("  Portrait matting: %s", self.use_portrait_matting)
+        if self.use_portrait_matting:
+            logger.info("  Portrait strength: %.2f", self.portrait_matting_strength)
         logger.info("  Color filter: %s", self.color_filter.color.value)
         logger.info("  Alpha mode: %s", self.alpha_config.mode.value)
         logger.info("  Resolution mode: %s", self.resolution_config.mode.value)
@@ -227,6 +240,31 @@ class UltraBackend(BaseBackend):
 
         target_size = size_map.get(mode, 1024)
         return (target_size, target_size)
+
+    def _calculate_trimap_kernel_size(
+        self, image_size: tuple[int, int], base_kernel: int
+    ) -> int:
+        """
+        根據圖片解析度動態計算 trimap 核大小
+
+        Args:
+            image_size: 圖片尺寸 (width, height)
+            base_kernel: 基礎核大小 (1024x1024 時的建議值)
+
+        Returns:
+            動態調整後的核大小
+        """
+        width, height = image_size
+        max_dim = max(width, height)
+
+        # 以 1024 為基準，動態縮放核大小
+        scale_factor = max_dim / 1024.0
+
+        # 計算動態核大小，但限制在合理範圍內
+        dynamic_kernel = int(base_kernel * scale_factor)
+
+        # 限制在 5-30 之間（避免過小或過大）
+        return max(5, min(30, dynamic_kernel))
 
     def _create_trimap(
         self, alpha: np.ndarray, erode_kernel: int, dilate_kernel: int
@@ -496,13 +534,42 @@ class UltraBackend(BaseBackend):
 
             # 階段 2: Trimap refinement（如果啟用）
             if self.use_trimap_refine:
-                # 根據強度動態調整 trimap 參數
-                erode_k = int(self.TRIMAP_ERODE_KERNEL * (1.5 - self.strength * 0.5))
-                dilate_k = int(self.TRIMAP_DILATE_KERNEL * (1.5 - self.strength * 0.5))
+                # 動態計算 trimap 參數（考慮解析度和強度）
+                # 1. 根據解析度調整基礎核大小
+                base_erode = self._calculate_trimap_kernel_size(
+                    original.size, self.TRIMAP_ERODE_KERNEL
+                )
+                base_dilate = self._calculate_trimap_kernel_size(
+                    original.size, self.TRIMAP_DILATE_KERNEL
+                )
+
+                # 2. 根據強度微調（強度越高，核越小，未知區越窄）
+                erode_k = int(base_erode * (1.5 - self.strength * 0.5))
+                dilate_k = int(base_dilate * (1.5 - self.strength * 0.5))
+
+                # 確保至少為 3（奇數）
+                erode_k = max(3, erode_k if erode_k % 2 == 1 else erode_k + 1)
+                dilate_k = max(3, dilate_k if dilate_k % 2 == 1 else dilate_k + 1)
 
                 trimap = self._create_trimap(alpha, erode_k, dilate_k)
                 alpha = self._refine_alpha_in_unknown_region(image_np, alpha, trimap)
-                logger.debug("Stage 2: Trimap refinement complete")
+                logger.debug(
+                    "Stage 2: Trimap refinement complete (kernel: %d/%d)",
+                    erode_k,
+                    dilate_k,
+                )
+
+            # 階段 2.5: 人像 matting 精修（如果啟用）
+            if self.use_portrait_matting:
+                if self._portrait_refiner is None:
+                    self._portrait_refiner = PortraitMattingRefiner(
+                        model_name="enhanced", device=str(self.device)
+                    )
+
+                alpha = self._portrait_refiner.refine_alpha(
+                    image_np, alpha, self.portrait_matting_strength
+                )
+                logger.debug("Stage 2.5: Portrait matting refinement complete")
 
             # 階段 3: Advanced defringing
             image_np = self._apply_advanced_defringing(image_np, alpha)
@@ -515,9 +582,12 @@ class UltraBackend(BaseBackend):
             # 階段 5: 邊緣去污染（修復背景色滲透）
             if self.alpha_config.edge_decontamination:
                 image_np = decontaminate_edges(
-                    image_np, alpha, self.alpha_config.decontamination_strength
+                    image_np,
+                    alpha,
+                    self.alpha_config.decontamination_strength,
+                    use_kmeans=True,  # 使用 KMeans 智能背景色估計
                 )
-                logger.debug("Stage 5: Edge decontamination complete")
+                logger.debug("Stage 5: Edge decontamination complete (KMeans)")
 
             # 階段 6: Alpha 模式處理
             if self.alpha_config.mode.value == "premultiplied":
@@ -553,12 +623,14 @@ class UltraBackend(BaseBackend):
            ⚠️  僅供非商用使用（CC BY-NC 4.0）
            • 專業級 alpha matte 輸出
            • Trimap-based edge refinement
+           • Portrait matting refinement (人像/頭髮優化)
            • Multi-space defringing
+           • KMeans 智能背景色估計
            • 可選純色背景過濾
 
   推薦設定：
     • 一般圖片：強度 0.6-0.7
-    • 複雜邊緣（頭髮）：強度 0.7-0.9
+    • 複雜邊緣（頭髮）：強度 0.7-0.9 + 人像精修
     • 純色背景：強度 0.8 + 色彩過濾
 
   ⚠️  商業使用需與 BRIA 協議
