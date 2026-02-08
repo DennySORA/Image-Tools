@@ -1,19 +1,10 @@
 """
-工具模組
+工具模組 (相容性層)
 
-提供各種輔助工具和通用功能
+DEPRECATED: 工具已遷移至對應功能模組
+- splitter, union_find, geometry -> src.features.image_splitting
 """
 
-from .geometry import BBox
-from .splitter import ImageSplitter, SplitConfig, SplitResult
-from .union_find import UnionFind, UnionFindDynamic
+from src.features.image_splitting import geometry, splitter, union_find
 
-
-__all__ = [
-    "BBox",
-    "ImageSplitter",
-    "SplitConfig",
-    "SplitResult",
-    "UnionFind",
-    "UnionFindDynamic",
-]
+__all__ = ["geometry", "splitter", "union_find"]
