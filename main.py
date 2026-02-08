@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
-圖片背景移除工具
+圖片處理工具
 
-主程式進入點，負責組合各模組並啟動應用程式
-遵循依賴反轉原則 (DIP)：依賴抽象而非具體實作
+主程式進入點，使用現代化 CLI 介面
 
 使用方法:
     uv run main.py
@@ -14,7 +13,7 @@ import sys
 
 from src.backends import BackendRegistry
 from src.core.processor import ImageProcessor
-from src.ui import InteractiveUI
+from src.ui import ModernUI
 
 
 def main() -> int:
@@ -27,49 +26,54 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     try:
-        # 建立 UI
-        ui = InteractiveUI()
-        last_result_success = True
+        ui = ModernUI()
 
-        # 主循環 - 支援連續處理
+        # 主循環 - 支援連續處理（自動返回主選單）
         while True:
-            # 1. 執行交互式設定流程
+            # 1. 執行互動式設定流程（使用新的現代化 UI）
             config = ui.run()
 
             if config is None:
-                ui.show_cancelled()
-                break
+                # 使用者取消，退出程式
+                print("\n👋 再見！")
+                return 0
 
-            # 2. 建立後端
+            # 2. 顯示處理摘要
+            ui.show_summary(config)
+
+            # 3. 建立後端
             backend = BackendRegistry.create(
                 name=config.backend_name,
                 model=config.model,
                 strength=config.strength,
             )
 
-            # 3. 建立處理器並處理圖片
+            # 4. 建立處理器並處理圖片
             processor = ImageProcessor(backend)
             result = processor.process_folder(config)
-            last_result_success = result.is_complete_success
 
-            # 4. 顯示結果
-            ui.show_result(result)
+            # 5. 顯示結果
+            print("\n" + "=" * 60)
+            print("✅ 處理完成！".center(60))
+            print("=" * 60)
+            print(f"\n  📊 總計: {result.total} 張圖片")
+            print(f"  ✅ 成功: {result.success} 張")
+            if result.failed > 0:
+                print(f"  ❌ 失敗: {result.failed} 張")
+            print(f"  📂 輸出: {result.output_folder}")
+            print("\n" + "=" * 60 + "\n")
 
-            # 5. 詢問是否繼續
-            if not ui.ask_continue():
-                break
+            # 6. 自動返回主選單（不詢問）
+            print("🔄 返回主選單...\n")
 
     except KeyboardInterrupt:
-        sys.stdout.write("\n\n已取消\n")
-        sys.stdout.flush()
-        return 1
+        print("\n\n👋 已中斷操作，再見！")
+        return 130
 
     except Exception as exc:
-        sys.stderr.write(f"\n錯誤: {exc}\n")
-        sys.stderr.flush()
+        print(f"\n❌ 錯誤: {exc}\n")
+        logging.exception("處理時發生錯誤")
         return 1
-    else:
-        return 0 if last_result_success else 1
 
 
 if __name__ == "__main__":

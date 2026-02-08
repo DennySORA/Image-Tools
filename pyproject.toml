@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "backgroundremover>=0.3.5",
+    "inquirerpy>=0.3.4",
     "moviepy<2.0",
     "onnxruntime>=1.23.2",
     "pillow>=12.0.0",
@@ -79,6 +80,10 @@ convention = "google" # Use Google-style docstrings (Args:, Returns:, Raises:)
 
 [tool.ruff.lint.mccabe]
 max-complexity = 10
+
+[tool.ruff.lint.per-file-ignores]
+"main.py" = ["T201"]  # Allow print in main entry point
+"src/ui/**" = ["T201"]  # Allow print in UI modules
 
 # ---------------- mypy ----------------
 
