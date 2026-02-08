@@ -89,9 +89,7 @@ def _calculate_alpha_map(bg_image: Image.Image) -> list[float]:
     return alpha_map
 
 
-def _detect_watermark_config(
-    width: int, height: int
-) -> WatermarkConfig:
+def _detect_watermark_config(width: int, height: int) -> WatermarkConfig:
     """
     根據圖片尺寸偵測浮水印配置。
 
@@ -178,17 +176,18 @@ def _remove_watermark(
             px = pixels[px_x, px_y]
 
             # 對 RGB 三個通道分別進行反向 Alpha 混合
+            # Ensure px is a tuple/sequence (not a single float)
+            if not isinstance(px, (tuple, list)):
+                continue
+
             new_channels: list[int] = []
             for c in range(3):
                 watermarked = px[c]
-                original = (
-                    watermarked - wm_alpha * LOGO_VALUE
-                ) / one_minus_alpha
+                original = (watermarked - wm_alpha * LOGO_VALUE) / one_minus_alpha
 
                 # 依據強度混合原始值和校正值
                 blended = (
-                    watermarked * (1.0 - params.strength)
-                    + original * params.strength
+                    watermarked * (1.0 - params.strength) + original * params.strength
                 )
 
                 # 限制在 [0, 255] 範圍內
@@ -198,12 +197,10 @@ def _remove_watermark(
                 # 同時還原 alpha 通道
                 # 浮水印公式: wm_a = α × 255 + (1 - α) × orig_a
                 # 反向: orig_a = (wm_a - α × 255) / (1 - α)
-                orig_alpha = (
-                    px[3] - wm_alpha * LOGO_VALUE
-                ) / one_minus_alpha
+                assert isinstance(px, (tuple, list)) and len(px) > 3  # type guard
+                orig_alpha = (px[3] - wm_alpha * LOGO_VALUE) / one_minus_alpha
                 blended_alpha = (
-                    px[3] * (1.0 - params.strength)
-                    + orig_alpha * params.strength
+                    px[3] * (1.0 - params.strength) + orig_alpha * params.strength
                 )
                 new_a = max(0, min(255, round(blended_alpha)))
 
@@ -231,13 +228,9 @@ class GeminiWatermarkBackend(BaseBackend):
     """
 
     name: ClassVar[str] = "gemini-watermark"
-    description: ClassVar[str] = (
-        "Gemini 浮水印移除 - 移除 Gemini AI 生成圖片的浮水印"
-    )
+    description: ClassVar[str] = "Gemini 浮水印移除 - 移除 Gemini AI 生成圖片的浮水印"
 
-    def __init__(
-        self, model: str = DEFAULT_MODE, strength: float = 1.0
-    ) -> None:
+    def __init__(self, model: str = DEFAULT_MODE, strength: float = 1.0) -> None:
         """
         初始化 Gemini 浮水印移除後端。
 
@@ -251,9 +244,7 @@ class GeminiWatermarkBackend(BaseBackend):
         super().__init__(strength=strength)
 
         if model not in AVAILABLE_MODES:
-            raise ValueError(
-                f"不支援的模式: {model}，可用模式: {AVAILABLE_MODES}"
-            )
+            raise ValueError(f"不支援的模式: {model}，可用模式: {AVAILABLE_MODES}")
 
         self.model = model
         self._alpha_maps: dict[int, list[float]] = {}
@@ -345,13 +336,11 @@ class GeminiWatermarkBackend(BaseBackend):
             alpha_map = self._get_alpha_map(wm_config.logo_size)
 
             # 計算浮水印位置 (右下角)
-            wx, wy = _calculate_watermark_position(
-                width, height, wm_config
-            )
+            wx, wy = _calculate_watermark_position(width, height, wm_config)
 
             # 確保圖片為 RGB 或 RGBA 模式
             if image.mode not in ("RGB", "RGBA"):
-                image = image.convert("RGB")
+                image = image.convert("RGB")  # type: ignore[assignment]
 
             # 移除浮水印
             _remove_watermark(
@@ -370,9 +359,7 @@ class GeminiWatermarkBackend(BaseBackend):
             image.close()
 
         except Exception:
-            logger.exception(
-                "Gemini watermark removal failed: %s", input_path.name
-            )
+            logger.exception("Gemini watermark removal failed: %s", input_path.name)
             return False
         else:
             return True

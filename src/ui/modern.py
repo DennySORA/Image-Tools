@@ -9,6 +9,7 @@
 """
 
 from pathlib import Path
+from typing import Any
 
 from InquirerPy import inquirer
 from InquirerPy.base.control import Choice
@@ -118,10 +119,10 @@ class ModernUI:
 
             # 顯示選擇器
             try:
-                folder = inquirer.select(
+                folder = inquirer.select(  # type: ignore[attr-defined]
                     message="選擇輸入資料夾:",
                     choices=choices,
-                    default=choices[1] if len(choices) > 2 else choices[0],  # type: ignore[arg-type]  # noqa: PLR2004
+                    default=choices[1] if len(choices) > 2 else choices[0],  # noqa: PLR2004
                     mandatory=False,  # 允許 ESC
                     mandatory_message="請選擇一個資料夾",
                 ).execute()
@@ -135,7 +136,7 @@ class ModernUI:
             # 處理自訂路徑
             if folder == "__custom__":
                 try:
-                    path_str = inquirer.filepath(
+                    path_str = inquirer.filepath(  # type: ignore[attr-defined]
                         message="輸入資料夾路徑:",
                         default=str(Path.cwd()),
                         validate=lambda p: Path(p).exists() and Path(p).is_dir(),
@@ -149,11 +150,14 @@ class ModernUI:
                 if path_str is None:
                     continue  # ESC = 返回選擇（重新循環）
 
-                folder = Path(path_str)
+                if path_str is None:
+                    continue  # ESC = 返回選擇（重新循環）
+
+                folder = Path(str(path_str))
 
             # 記錄到歷史
             self._history.save(folder)
-            return folder
+            return folder  # type: ignore[no-any-return]
 
     def _select_operation(self) -> str | None:
         """
@@ -181,18 +185,20 @@ class ModernUI:
         ]
 
         try:
-            return inquirer.select(
+            result = inquirer.select(  # type: ignore[attr-defined]
                 message="選擇要執行的操作:",
                 choices=choices,
                 default=choices[1],  # 預設第一個操作
                 mandatory=False,
             ).execute()
+            # Cast to str for type checker, None is also valid
+            return str(result) if result is not None else None
         except KeyboardInterrupt:
             return None
 
     def _select_backend_for_operation(
         self, operation: str
-    ) -> tuple[str, str, float, dict] | None:
+    ) -> tuple[str, str, float, dict[str, Any]] | None:
         """
         根據操作類型選擇對應的後端
 
@@ -217,9 +223,9 @@ class ModernUI:
         # 直接配置後端
         return self._configure_backend(backend_name)
 
-    def _configure_backend(  # noqa: PLR0911
+    def _configure_backend(  # noqa: PLR0911, C901, PLR0912
         self, backend_name: str
-    ) -> tuple[str, str, float, dict] | None:
+    ) -> tuple[str, str, float, dict[str, Any]] | None:
         """
         配置後端參數
 
@@ -231,7 +237,7 @@ class ModernUI:
         """
         backend_class = BackendRegistry.get(backend_name)
         models = backend_class.get_available_models()
-        extra_config: dict = {}
+        extra_config: dict[str, Any] = {}
 
         # 選擇模型
         if len(models) == 1:
@@ -245,7 +251,7 @@ class ModernUI:
             ]
 
             try:
-                model = inquirer.select(
+                model = inquirer.select(  # type: ignore[attr-defined]
                     message="選擇模型:",
                     choices=choices,
                     default=choices[1] if len(choices) > 1 else None,
@@ -264,7 +270,7 @@ class ModernUI:
         elif backend_name == "image-splitter":
             # 圖片分割使用滑桿選擇填充大小
             try:
-                strength = inquirer.number(
+                strength = inquirer.number(  # type: ignore[attr-defined]
                     message="設定裁切填充 (0.1-1.0, 影響透明邊距):",
                     min_allowed=0.1,
                     max_allowed=1.0,
@@ -281,7 +287,7 @@ class ModernUI:
             # 統一/極致後端：強度 + 可選色彩過濾
             default_strength = 0.8 if backend_name == "ultra" else 0.7
             try:
-                strength = inquirer.number(
+                strength = inquirer.number(  # type: ignore[attr-defined]
                     message="設定處理強度 (0.1-1.0):",
                     min_allowed=0.1,
                     max_allowed=1.0,
@@ -297,7 +303,7 @@ class ModernUI:
 
             # 詢問是否啟用色彩過濾
             try:
-                enable_filter = inquirer.confirm(
+                enable_filter = inquirer.confirm(  # type: ignore[attr-defined]
                     message="啟用純色背景過濾？（針對純黑/純白/綠幕背景）",
                     default=False,
                     mandatory=False,
@@ -319,7 +325,7 @@ class ModernUI:
                 ]
 
                 try:
-                    bg_color = inquirer.select(
+                    bg_color = inquirer.select(  # type: ignore[attr-defined]
                         message="選擇背景顏色類型:",
                         choices=color_choices,
                         default=color_choices[0],
@@ -335,7 +341,7 @@ class ModernUI:
         else:
             # 其他背景移除使用滑桿選擇強度
             try:
-                strength = inquirer.number(
+                strength = inquirer.number(  # type: ignore[attr-defined]
                     message="設定處理強度 (0.1-1.0):",
                     min_allowed=0.1,
                     max_allowed=1.0,

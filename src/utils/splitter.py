@@ -124,23 +124,31 @@ class ImageSplitter:
             image = image.convert("RGBA")
 
         # 檢測物件
+        detected_objects: list[DetectedObject]
+        threshold_value: int
+
         if self.config.smart_threshold:
             detection = self._detect_objects_smart(image)
-            objects = detection["objects"]
-            alpha_threshold = detection["alpha_threshold"]
+            # Cast to proper types (dict values can be int | list but keys determine actual type)
+            detected_objects = detection["objects"]  # type: ignore[assignment]
+            threshold_value = detection["alpha_threshold"]  # type: ignore[assignment]
         else:
-            objects = self._detect_objects(image, self.config.alpha_threshold)
-            alpha_threshold = self.config.alpha_threshold
+            objects_result = self._detect_objects(image, self.config.alpha_threshold)
+            # Handle case where _detect_objects returns an error code (int)
+            detected_objects = [] if isinstance(objects_result, int) else objects_result
+            threshold_value = self.config.alpha_threshold
 
-        logger.info(f"檢測到 {len(objects)} 個物件 (Alpha 閾值: {alpha_threshold})")
+        logger.info(
+            f"檢測到 {len(detected_objects)} 個物件 (Alpha 閾值: {threshold_value})"
+        )
 
         # 分割並居中
-        sprites = self._split_and_center(image, objects)
+        sprites = self._split_and_center(image, detected_objects)
 
         return SplitResult(
             sprites=tuple(sprites),
-            alpha_threshold=alpha_threshold,
-            object_count=len(objects),
+            alpha_threshold=threshold_value,
+            object_count=len(detected_objects),
         )
 
     def process_file(
@@ -207,14 +215,19 @@ class ImageSplitter:
         # 合併相近物件
         if self.config.merge_pad_px > 0 and len(objects) > 1:
             objects = self._merge_objects(
-                objects, merge_pad_px=self.config.merge_pad_px, max_width=w, max_height=h
+                objects,
+                merge_pad_px=self.config.merge_pad_px,
+                max_width=w,
+                max_height=h,
             )
 
         # 按位置排序 (從上到下，從左到右)
         objects.sort(key=lambda o: (o.bbox.top, o.bbox.left))
         return objects
 
-    def _detect_objects_smart(self, image: Image.Image) -> dict[str, int | list[DetectedObject]]:
+    def _detect_objects_smart(
+        self, image: Image.Image
+    ) -> dict[str, int | list[DetectedObject]]:
         """智能檢測物件 (自動選擇最佳 Alpha 閾值)"""
         base_objects = self._detect_objects(image, self.config.alpha_threshold)
 
@@ -232,9 +245,7 @@ class ImageSplitter:
         # 嘗試不同的閾值
         best_threshold = self.config.alpha_threshold
         best_objects = base_objects
-        best_score = self._score_candidate(
-            best_threshold, best_objects, run_len=1
-        )
+        best_score = self._score_candidate(best_threshold, best_objects, run_len=1)
 
         for threshold in AUTO_ALPHA_THRESHOLDS:
             try:

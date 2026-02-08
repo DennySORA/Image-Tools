@@ -18,7 +18,6 @@
 - Alpha Matting: https://github.com/pymatting/pymatting
 """
 
-import io
 import logging
 from dataclasses import dataclass
 from enum import Enum
@@ -29,7 +28,7 @@ import cv2
 import numpy as np
 import torch
 from PIL import Image
-from torchvision import transforms
+from torchvision import transforms  # type: ignore[import-untyped]
 
 from src.core.interfaces import BaseBackend
 
@@ -182,11 +181,9 @@ class UltraBackend(BaseBackend):
         alpha = (alpha * 255).astype(np.uint8)
 
         # Resize 回原始尺寸
-        alpha = cv2.resize(
-            alpha, original_size, interpolation=cv2.INTER_LINEAR
-        )
+        alpha = cv2.resize(alpha, original_size, interpolation=cv2.INTER_LINEAR)
 
-        return alpha
+        return alpha  # type: ignore[no-any-return]
 
     def _create_trimap(
         self, alpha: np.ndarray, erode_kernel: int, dilate_kernel: int
@@ -360,9 +357,7 @@ class UltraBackend(BaseBackend):
 
         return np.clip(result, 0, 255).astype(np.uint8)
 
-    def _apply_color_filter(
-        self, image: np.ndarray, alpha: np.ndarray
-    ) -> np.ndarray:
+    def _apply_color_filter(self, image: np.ndarray, alpha: np.ndarray) -> np.ndarray:
         """
         階段 4: 色彩過濾（針對純色背景）
 
@@ -426,7 +421,7 @@ class UltraBackend(BaseBackend):
 
         # 與現有 alpha 合併（取最小值）
         foreground_mask = 255 - color_mask
-        return np.minimum(alpha, foreground_mask)
+        return np.minimum(alpha, foreground_mask)  # type: ignore[no-any-return]
 
     def process(self, input_path: Path, output_path: Path) -> bool:
         """

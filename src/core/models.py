@@ -5,8 +5,10 @@
 使用 dataclass 確保資料的不可變性和清晰性
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -60,7 +62,7 @@ class ProcessConfig:
     model: str
     strength: float
     output_folder: Path | None = field(default=None)
-    extra_config: dict = field(default_factory=dict)
+    extra_config: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         # frozen=True 時需要使用 object.__setattr__
