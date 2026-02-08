@@ -6,13 +6,14 @@ A powerful, production-grade tool for removing image backgrounds using state-of-
 
 ## ✨ Highlights
 
-🎯 **Unified SOTA Backend** - Best-in-class background removal using BiRefNet-massive
-🔬 **Multi-Stage Processing** - Segmentation → Alpha Matting → Edge Defringing
+🏆 **Ultra Backend (NEW!)** - Maximum quality with BRIA RMBG-2.0 (non-commercial)
+🎯 **Unified SOTA Backend** - Best-in-class with BiRefNet-massive (MIT, commercial OK)
+🔬 **Advanced Processing** - Trimap Refinement → Multi-space Defringing
 🎨 **Pure Color Optimization** - Special handling for green/white/black backgrounds
 💪 **Controllable Strength** - Fine-tune removal aggressiveness (0.1-1.0)
 🚀 **Batch Processing** - Handle entire folders efficiently
 🔒 **100% Local** - No API calls, complete privacy
-📦 **MIT License** - Fully commercial-use friendly
+📦 **Flexible Licensing** - MIT (commercial) or CC BY-NC (ultimate quality)
 
 ## Installation
 
@@ -38,15 +39,45 @@ Follow the interactive prompts:
 
 Output images are saved as transparent PNGs in `<input-folder>/output/`
 
-## 🎯 Unified Background Removal
+## 🎯 Background Removal Backends
 
-Our new unified backend combines the best techniques:
+### Which Backend to Use?
 
-### Features
-- **BiRefNet-massive**: SOTA segmentation model with excellent edge preservation
-- **Alpha Matting**: Automatic refinement for complex edges (hair, fur, transparent materials)
-- **Edge Defringing**: Removes color contamination (white/green edges)
+| Backend | Quality | Speed | License | Best For |
+|---------|---------|-------|---------|----------|
+| **Ultra** ⭐⭐⭐⭐⭐ | Extreme | Medium | **Non-commercial** | Personal use, maximum quality |
+| **Unified** ⭐⭐⭐⭐ | Excellent | Fast | **MIT (commercial OK)** | Commercial projects, general use |
+
+### Ultra Backend (Maximum Quality)
+
+**⚠️ Non-commercial use only (CC BY-NC 4.0)**
+
+The ultimate solution for personal users seeking the absolute best quality:
+
+#### Features
+- **BRIA RMBG-2.0**: Professional-grade model with superior training data
+- **Trimap Refinement**: Intelligent boundary processing (preserves details)
+- **Multi-space Defringing**: RGB + LAB + HSV color analysis
+- **Guided Filter**: Edge-aware smoothing (better than Gaussian blur)
 - **Color Filter** (Optional): Optimized for pure-color backgrounds
+
+[📚 Full Ultra Backend Documentation](docs/ULTRA_BACKEND.md)
+
+---
+
+### Unified Backend (Commercial-Friendly)
+
+**✅ MIT License - Commercial use OK**
+
+Balanced solution combining quality and flexibility:
+
+#### Features
+- **BiRefNet-massive**: SOTA segmentation with excellent edge preservation
+- **Alpha Matting**: Automatic refinement for complex edges
+- **Edge Defringing**: Removes color contamination
+- **Color Filter** (Optional): Pure-color background optimization
+
+[📚 Full Unified Backend Documentation](docs/UNIFIED_BACKEND.md)
 
 ### Recommended Settings
 
@@ -82,8 +113,10 @@ Our new unified backend combines the best techniques:
 
 ## 📚 Documentation
 
-- **[Unified Backend Guide](docs/UNIFIED_BACKEND.md)** - Comprehensive technical documentation
-- **[ESC Key Navigation Fix](docs/ESC_KEYFIX.md)** - Troubleshooting UI navigation
+- **[🏆 Ultra Backend Guide](docs/ULTRA_BACKEND.md)** - Maximum quality (non-commercial)
+- **[Unified Backend Guide](docs/UNIFIED_BACKEND.md)** - Commercial-friendly solution
+- **[Migration Guide](docs/MIGRATION_GUIDE.md)** - Upgrading from old backends
+- **[ESC Key Navigation Fix](docs/ESC_KEY_FIX.md)** - Troubleshooting UI navigation
 
 ## 🔧 Technical Details
 
@@ -128,14 +161,17 @@ Output PNG (RGBA)
 
 ## 🆚 Comparison
 
-| Feature | remove.bg | Unified Backend |
-|---------|-----------|-----------------|
-| License | Commercial (paid) | MIT (free, commercial-use) |
-| Quality | Excellent | Excellent or better |
-| Edge Detail | Good | Excellent (Alpha Matting) |
-| Privacy | ❌ Upload required | ✅ 100% local |
-| Customization | ❌ No control | ✅ Strength + color filter |
-| Cost | Per image | Free (hardware only) |
+| Feature | remove.bg | **Ultra Backend** | Unified Backend |
+|---------|-----------|-------------------|-----------------|
+| License | Commercial (paid) | **Non-commercial (free)** | MIT (free, commercial) |
+| Quality | Excellent | **⭐⭐⭐⭐⭐ Extreme** | ⭐⭐⭐⭐ Excellent |
+| Edge Detail | Good | **⭐⭐⭐⭐⭐ Extreme** | ⭐⭐⭐⭐ Excellent |
+| Processing | RGB + LAB | **RGB + LAB + HSV** | RGB + LAB |
+| Trimap Refinement | ❌ | **✅ Complete** | ❌ |
+| Privacy | ❌ Upload required | **✅ 100% local** | ✅ 100% local |
+| Customization | ❌ No control | **✅ Full control** | ✅ Strength + filter |
+| Cost | $0.20+/image | **Free (hardware)** | Free (hardware) |
+| Best For | Quick API use | **Personal, max quality** | Commercial projects |
 
 ## External Dependencies (Third-Party)
 
