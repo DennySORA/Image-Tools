@@ -15,7 +15,6 @@ wheels/
 # Test files and directories
 test_images/
 test_output/
-test_*.py
 
 # macOS
 .DS_Store
