@@ -8,6 +8,7 @@ from .geometry import BBox
 from .splitter import ImageSplitter, SplitConfig, SplitResult
 from .union_find import UnionFind, UnionFindDynamic
 
+
 __all__ = [
     "BBox",
     "ImageSplitter",

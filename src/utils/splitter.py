@@ -188,7 +188,7 @@ class ImageSplitter:
             raise SplitImgError("無效的圖片尺寸")
 
         if not (0 <= alpha_threshold <= ALPHA_MAX):
-            raise SplitImgError(f"Alpha 閾值必須在 [0, 255] 範圍內")
+            raise SplitImgError("Alpha 閾值必須在 [0, 255] 範圍內")
 
         alpha = image.getchannel("A").tobytes()
         objects = self._detect_components_from_alpha(

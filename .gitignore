@@ -11,3 +11,20 @@ wheels/
 
 # User-local history
 .rembg_history.json
+
+# Test files and directories
+test_images/
+test_output/
+test_*.py
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Cache
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
