@@ -84,13 +84,21 @@ def greenscreen_image(test_images_dir: Path) -> Path:
     draw = ImageDraw.Draw(img)
 
     # 繪製前景物體（矩形 + 圓形組合）
-    draw.rectangle([(150, 200), (350, 400)], fill=(255, 100, 100), outline=(200, 50, 50), width=3)
-    draw.ellipse([(200, 150), (300, 250)], fill=(100, 150, 255), outline=(50, 100, 200), width=3)
+    draw.rectangle(
+        [(150, 200), (350, 400)], fill=(255, 100, 100), outline=(200, 50, 50), width=3
+    )
+    draw.ellipse(
+        [(200, 150), (300, 250)], fill=(100, 150, 255), outline=(50, 100, 200), width=3
+    )
 
     # 添加一些綠色溢出效果（模擬真實綠幕問題）
     for i in range(5):
         x = 150 + i * 10
-        color = (int(255 * (1 - i * 0.1)), int(100 + 77 * i * 0.1), int(100 + 64 * i * 0.1))
+        color = (
+            int(255 * (1 - i * 0.1)),
+            int(100 + 77 * i * 0.1),
+            int(100 + 64 * i * 0.1),
+        )
         draw.line([(x, 200), (x, 400)], fill=color, width=2)
 
     img.save(img_path)
@@ -112,11 +120,17 @@ def white_background_image(test_images_dir: Path) -> Path:
 
     # 繪製產品（簡單的瓶子形狀）
     # 瓶身
-    draw.rectangle([(200, 250), (312, 450)], fill=(100, 149, 237), outline=(70, 130, 180), width=3)
+    draw.rectangle(
+        [(200, 250), (312, 450)], fill=(100, 149, 237), outline=(70, 130, 180), width=3
+    )
     # 瓶頸
-    draw.rectangle([(230, 200), (282, 250)], fill=(100, 149, 237), outline=(70, 130, 180), width=3)
+    draw.rectangle(
+        [(230, 200), (282, 250)], fill=(100, 149, 237), outline=(70, 130, 180), width=3
+    )
     # 瓶蓋
-    draw.rectangle([(220, 180), (292, 200)], fill=(255, 215, 0), outline=(218, 165, 32), width=2)
+    draw.rectangle(
+        [(220, 180), (292, 200)], fill=(255, 215, 0), outline=(218, 165, 32), width=2
+    )
 
     # 添加高光
     draw.ellipse([(220, 280), (250, 310)], fill=(200, 220, 255))
@@ -140,7 +154,9 @@ def black_background_image(test_images_dir: Path) -> Path:
 
     # 繪製人形輪廓
     # 頭部
-    draw.ellipse([(206, 100), (306, 200)], fill=(255, 220, 177), outline=(200, 180, 150), width=2)
+    draw.ellipse(
+        [(206, 100), (306, 200)], fill=(255, 220, 177), outline=(200, 180, 150), width=2
+    )
     # 頸部
     draw.rectangle([(236, 200), (276, 250)], fill=(255, 220, 177))
     # 身體
@@ -171,12 +187,14 @@ def complex_edges_image(test_images_dir: Path) -> Path:
     pixels = img.load()
     for y in range(512):
         for x in range(512):
-            pixels[x, y] = (int(200 + 55 * y / 512), int(220 + 35 * y / 512), int(255))
+            pixels[x, y] = (int(200 + 55 * y / 512), int(220 + 35 * y / 512), 255)
 
     draw = ImageDraw.Draw(img)
 
     # 繪製主體
-    draw.ellipse([(156, 156), (356, 356)], fill=(139, 90, 43), outline=(100, 60, 30), width=2)
+    draw.ellipse(
+        [(156, 156), (356, 356)], fill=(139, 90, 43), outline=(100, 60, 30), width=2
+    )
 
     # 繪製複雜的毛髮邊緣（用很多細線模擬）
     np.random.seed(42)

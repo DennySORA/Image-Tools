@@ -7,7 +7,6 @@
 from pathlib import Path
 
 import pytest
-
 from src.core.models import (
     SUPPORTED_EXTENSIONS,
     ImageFile,

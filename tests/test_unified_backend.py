@@ -4,10 +4,8 @@ Unified Backend 單元測試
 
 from pathlib import Path
 
-import numpy as np
 import pytest
 from PIL import Image
-
 from src.backends.unified import ColorFilter, ColorFilterConfig, UnifiedBackend
 
 

@@ -13,7 +13,6 @@ from pathlib import Path
 import numpy as np
 import pytest
 from PIL import Image
-
 from src.backends.ultra import ColorFilter, ColorFilterConfig, UltraBackend
 from src.backends.unified import UnifiedBackend
 from src.core.models import ProcessConfig

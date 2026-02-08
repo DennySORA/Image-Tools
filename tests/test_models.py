@@ -4,8 +4,6 @@
 
 from pathlib import Path
 
-import pytest
-
 from src.core.models import ProcessConfig, is_supported_image
 
 

@@ -11,14 +11,11 @@ Ultra Backend 單元測試
 """
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import cv2
 import numpy as np
 import pytest
-import torch
 from PIL import Image
-
 from src.backends.ultra import ColorFilter, ColorFilterConfig, UltraBackend
 
 
