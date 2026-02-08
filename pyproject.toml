@@ -178,3 +178,9 @@ exclude_lines = [
 
 [tool.coverage.html]
 directory = "htmlcov"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.19.1",
+    "ruff>=0.15.0",
+]
