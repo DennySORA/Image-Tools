@@ -206,7 +206,7 @@ class ModernUI:
         backend_map = {
             "watermark-removal": "gemini-watermark",
             "image-splitting": "image-splitter",
-            "background-removal": "unified",  # 統一使用新的 unified 後端
+            "background-removal": "ultra",  # 使用極致後端（非商用，最強效果）
         }
 
         backend_name = backend_map.get(operation)
@@ -277,14 +277,15 @@ class ModernUI:
 
             if strength is None:
                 return None
-        elif backend_name == "unified":
-            # 統一後端：強度 + 可選色彩過濾
+        elif backend_name in ("unified", "ultra"):
+            # 統一/極致後端：強度 + 可選色彩過濾
+            default_strength = 0.8 if backend_name == "ultra" else 0.7
             try:
                 strength = inquirer.number(
                     message="設定處理強度 (0.1-1.0):",
                     min_allowed=0.1,
                     max_allowed=1.0,
-                    default=0.7,  # 統一後端推薦 0.7
+                    default=default_strength,
                     float_allowed=True,
                     mandatory=False,
                 ).execute()

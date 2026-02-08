@@ -42,10 +42,14 @@ def main() -> int:
             ui.show_summary(config)
 
             # 3. 建立後端
-            # 如果是 unified 後端且有 color_filter 設定，需要建立 ColorFilterConfig
+            # 如果是 unified/ultra 後端且有 color_filter 設定，需要建立 ColorFilterConfig
             backend_kwargs = {}
-            if config.backend_name == "unified" and "color_filter" in config.extra_config:
-                from src.backends.unified import ColorFilter, ColorFilterConfig
+            if config.backend_name in ("unified", "ultra") and "color_filter" in config.extra_config:
+                # 根據後端類型導入對應的類別
+                if config.backend_name == "unified":
+                    from src.backends.unified import ColorFilter, ColorFilterConfig
+                else:  # ultra
+                    from src.backends.ultra import ColorFilter, ColorFilterConfig
 
                 color_filter = ColorFilterConfig(
                     enabled=True,
