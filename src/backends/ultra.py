@@ -19,8 +19,6 @@
 """
 
 import logging
-from dataclasses import dataclass
-from enum import Enum
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -30,31 +28,13 @@ import torch
 from PIL import Image
 from torchvision import transforms  # type: ignore[import-untyped]
 
+from src.common import ColorFilter, ColorFilterConfig
 from src.core.interfaces import BaseBackend
 
 from .registry import BackendRegistry
 
 
 logger = logging.getLogger(__name__)
-
-
-class ColorFilter(str, Enum):
-    """背景顏色過濾選項"""
-
-    NONE = "none"
-    BLACK = "black"
-    WHITE = "white"
-    GREEN = "green"
-
-
-@dataclass
-class ColorFilterConfig:
-    """色彩過濾設定"""
-
-    enabled: bool = False
-    color: ColorFilter = ColorFilter.NONE
-    hue_range: tuple[int, int] = (35, 85)  # 綠幕色相範圍
-    edge_refine_strength: float = 0.8
 
 
 @BackendRegistry.register("ultra")

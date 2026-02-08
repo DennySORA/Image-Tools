@@ -16,8 +16,6 @@
 import io
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
-from enum import Enum
 from pathlib import Path
 from typing import ClassVar, cast
 
@@ -26,6 +24,7 @@ import numpy as np
 from PIL import Image
 from rembg import new_session, remove  # type: ignore[import-untyped]
 
+from src.common import ColorFilter, ColorFilterConfig
 from src.core.interfaces import BaseBackend
 
 from .registry import BackendRegistry
@@ -35,31 +34,6 @@ logger = logging.getLogger(__name__)
 
 RemoveFunc = Callable[..., bytes]
 SessionFactory = Callable[[str], object]
-
-
-class ColorFilter(str, Enum):
-    """背景顏色過濾選項"""
-
-    NONE = "none"  # 不使用色彩過濾
-    BLACK = "black"  # 純黑背景
-    WHITE = "white"  # 純白背景
-    GREEN = "green"  # 綠幕背景
-
-
-@dataclass
-class ColorFilterConfig:
-    """色彩過濾設定"""
-
-    enabled: bool = False
-    color: ColorFilter = ColorFilter.NONE
-    # HSV 色相範圍（針對有色背景，如綠幕）
-    hue_range: tuple[int, int] = (35, 85)
-    # 明度範圍（針對黑白背景）
-    value_range: tuple[int, int] = (0, 30)  # 黑色
-    # 飽和度最小值
-    saturation_min: int = 40
-    # 邊緣處理強度
-    edge_refine_strength: float = 0.7
 
 
 @BackendRegistry.register("unified")
