@@ -40,6 +40,7 @@ from src.common import (
     decontaminate_edges,
     premultiply_alpha,
 )
+from src.common.preset_config import PresetLevel, get_preset
 from src.core.interfaces import BaseBackend
 from src.features.background_removal.portrait_matting import PortraitMattingRefiner
 
@@ -94,6 +95,7 @@ class UltraBackend(BaseBackend):
         use_trimap_refine: bool = True,
         use_portrait_matting: bool = False,
         portrait_matting_strength: float = 0.7,
+        portrait_matting_model: str = "enhanced",
         alpha_config: AlphaConfig | None = None,
         resolution_config: ResolutionConfig | None = None,
         device: str | None = None,
@@ -111,6 +113,7 @@ class UltraBackend(BaseBackend):
             use_trimap_refine: 是否使用 trimap refinement（推薦開啟）
             use_portrait_matting: 是否啟用人像 matting 精修（針對頭髮/邊緣）
             portrait_matting_strength: 人像精修強度 (0.1-1.0)
+            portrait_matting_model: 人像精修模型（"enhanced" 或 "modnet"）
             alpha_config: Alpha 處理設定（邊緣去污染、輸出模式）
             resolution_config: 解析度設定（1024/1536/2048/adaptive）
             device: 計算設備（cuda/cpu），None 則自動選擇
@@ -120,6 +123,7 @@ class UltraBackend(BaseBackend):
         self.use_trimap_refine = use_trimap_refine
         self.use_portrait_matting = use_portrait_matting
         self.portrait_matting_strength = portrait_matting_strength
+        self.portrait_matting_model = portrait_matting_model
         self.alpha_config = alpha_config or AlphaConfig()
         self.resolution_config = resolution_config or ResolutionConfig()
 
@@ -144,6 +148,7 @@ class UltraBackend(BaseBackend):
         logger.info("  Portrait matting: %s", self.use_portrait_matting)
         if self.use_portrait_matting:
             logger.info("  Portrait strength: %.2f", self.portrait_matting_strength)
+            logger.info("  Portrait model: %s", self.portrait_matting_model)
         logger.info("  Color filter: %s", self.color_filter.color.value)
         logger.info("  Alpha mode: %s", self.alpha_config.mode.value)
         logger.info("  Resolution mode: %s", self.resolution_config.mode.value)
@@ -703,13 +708,16 @@ class UltraBackend(BaseBackend):
             if self.use_portrait_matting:
                 if self._portrait_refiner is None:
                     self._portrait_refiner = PortraitMattingRefiner(
-                        model_name="enhanced", device=str(self.device)
+                        model_name=self.portrait_matting_model, device=str(self.device)
                     )
 
                 alpha = self._portrait_refiner.refine_alpha(
                     image_np, alpha, self.portrait_matting_strength
                 )
-                logger.debug("Stage 2.5: Portrait matting refinement complete")
+                logger.debug(
+                    "Stage 2.5: Portrait matting refinement complete (%s)",
+                    self.portrait_matting_model,
+                )
 
             # 階段 3: Advanced defringing
             image_np = self._apply_advanced_defringing(image_np, alpha)
@@ -749,9 +757,73 @@ class UltraBackend(BaseBackend):
             return True
 
     @classmethod
+    def from_preset(
+        cls,
+        level: PresetLevel | str,
+        color_filter: ColorFilterConfig | None = None,
+        device: str | None = None,
+    ) -> "UltraBackend":
+        """
+        從預設配置建立 Ultra Backend
+
+        Args:
+            level: 預設等級（balanced / high / ultra）
+            color_filter: 可選的色彩過濾設定（覆蓋預設）
+            device: 計算設備（覆蓋預設）
+
+        Returns:
+            配置好的 UltraBackend 實例
+
+        Examples:
+            >>> # 使用中等預設
+            >>> backend = UltraBackend.from_preset("balanced")
+            >>>
+            >>> # 使用高品質預設 + 綠幕過濾
+            >>> from src.common import ColorFilter, ColorFilterConfig
+            >>> green_filter = ColorFilterConfig(color=ColorFilter.GREEN, enabled=True)
+            >>> backend = UltraBackend.from_preset("high", color_filter=green_filter)
+            >>>
+            >>> # 使用最強預設
+            >>> backend = UltraBackend.from_preset(PresetLevel.ULTRA)
+        """
+        # 取得預設配置
+        preset = get_preset(level)
+
+        # 覆蓋色彩過濾（如果提供）
+        final_color_filter = color_filter or preset.color_filter
+
+        logger.info("Creating UltraBackend from preset: %s", preset.level_name)
+        logger.info("  Description: %s", preset.description)
+
+        # 建立實例
+        return cls(
+            strength=preset.strength,
+            color_filter=final_color_filter,
+            use_trimap_refine=preset.use_trimap_refine,
+            use_portrait_matting=preset.use_portrait_matting,
+            portrait_matting_strength=preset.portrait_matting_strength,
+            portrait_matting_model=preset.portrait_matting_model,
+            alpha_config=preset.to_alpha_config(),
+            resolution_config=preset.to_resolution_config(),
+            device=device,
+        )
+
+    @classmethod
     def get_available_models(cls) -> list[str]:
         """取得可用模型列表"""
         return ["auto"]
+
+    @classmethod
+    def get_available_presets(cls) -> dict[str, str]:
+        """
+        取得可用的預設配置列表
+
+        Returns:
+            預設名稱 -> 描述的字典
+        """
+        from src.common.preset_config import list_presets
+
+        return list_presets()
 
     @classmethod
     def get_model_description(cls) -> str:

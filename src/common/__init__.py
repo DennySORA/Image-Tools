@@ -16,6 +16,13 @@ from .alpha_config import (
     unpremultiply_alpha,
 )
 from .color_filter import ColorFilter, ColorFilterConfig
+from .preset_config import (
+    BackgroundRemovalPreset,
+    PresetLevel,
+    get_preset,
+    list_presets,
+    print_preset_comparison,
+)
 
 
 __all__ = [
@@ -30,4 +37,9 @@ __all__ = [
     "decontaminate_edges",
     "estimate_background_colors_kmeans",
     "calculate_adaptive_resolution",
+    "BackgroundRemovalPreset",
+    "PresetLevel",
+    "get_preset",
+    "list_presets",
+    "print_preset_comparison",
 ]

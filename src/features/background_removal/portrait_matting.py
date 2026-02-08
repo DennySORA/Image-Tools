@@ -83,30 +83,87 @@ class PortraitMattingRefiner:
         """
         載入 MODNet 模型
 
-        注意: 需要安裝 MODNet 依賴和下載模型權重
+        使用 Hugging Face 或 PyTorch Hub 載入預訓練模型
         如果模型不可用，將回退到 enhanced 模式
+
+        MODNet 參考：
+        - Paper: https://arxiv.org/abs/2011.11961
+        - GitHub: https://github.com/ZHKKKe/MODNet
+        - Hugging Face: Xenova/modnet
         """
         try:
-            # 嘗試導入 MODNet（如果已安裝）
-            # 這裡使用動態導入，以避免強制依賴
-            # from modnet import MODNet  # type: ignore
+            logger.info("Loading MODNet model from Hugging Face...")
 
-            # TODO: 實現 MODNet 載入邏輯
-            # 需要下載預訓練模型: modnet_photographic_portrait_matting.ckpt
-            # 模型大小約 27MB
+            # 方法 1: 嘗試從 Hugging Face 載入（推薦）
+            try:
+                from huggingface_hub import hf_hub_download
 
+                # 下載 MODNet 權重
+                model_path = hf_hub_download(
+                    repo_id="Xenova/modnet",
+                    filename="onnx/model.onnx",
+                    cache_dir=".cache/modnet",
+                )
+
+                logger.info("MODNet model downloaded: %s", model_path)
+
+                # 使用 ONNX Runtime 載入
+                try:
+                    import onnxruntime as ort
+
+                    session_options = ort.SessionOptions()
+                    session_options.graph_optimization_level = (
+                        ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+                    )
+
+                    providers = ["CPUExecutionProvider"]
+                    if self.device.type == "cuda":
+                        providers.insert(0, "CUDAExecutionProvider")
+
+                    self._model = ort.InferenceSession(
+                        model_path, session_options, providers=providers
+                    )
+                    self._model_loaded = True
+                    logger.info("MODNet loaded successfully (ONNX Runtime)")
+                    return
+
+                except ImportError:
+                    logger.warning("onnxruntime not installed. Trying PyTorch method.")
+
+            except Exception as e:
+                logger.warning("Failed to load from Hugging Face: %s", e)
+
+            # 方法 2: 嘗試從 PyTorch Hub 載入（備選）
+            try:
+                logger.info("Trying to load MODNet from PyTorch Hub...")
+
+                # 從 GitHub repo 載入
+                self._model = torch.hub.load(
+                    "ZHKKKe/MODNet",
+                    "modnet_photographic_portrait_matting",
+                    pretrained=True,
+                )
+                self._model.to(self.device)
+                self._model.eval()
+                self._model_loaded = True
+                logger.info("MODNet loaded successfully (PyTorch Hub)")
+                return
+
+            except Exception as e:
+                logger.warning("Failed to load from PyTorch Hub: %s", e)
+
+            # 如果都失敗，回退到 enhanced 模式
             logger.warning(
-                "MODNet integration is not yet implemented. "
-                "Falling back to enhanced mode."
+                "MODNet loading failed. Falling back to enhanced mode. "
+                "To use MODNet, install: pip install onnxruntime huggingface-hub"
             )
             self.model_name = "enhanced"
             self._model_loaded = True
 
-        except ImportError:
+        except Exception as e:
             logger.warning(
-                "MODNet not installed. Install with: pip install modnet-torch"
+                "MODNet loading error: %s. Falling back to enhanced mode.", e
             )
-            logger.info("Falling back to enhanced portrait matting mode")
             self.model_name = "enhanced"
             self._model_loaded = True
 
@@ -135,24 +192,109 @@ class PortraitMattingRefiner:
 
     def _refine_with_modnet(
         self,
-        image: np.ndarray,  # noqa: ARG002
+        image: np.ndarray,
         initial_alpha: np.ndarray,
-        focus_strength: float,  # noqa: ARG002
+        focus_strength: float,
     ) -> np.ndarray:
         """
         使用 MODNet 精修 alpha
 
         Args:
-            image: RGB 圖片
-            initial_alpha: 初始 alpha
-            focus_strength: 精修強度
+            image: RGB 圖片 (H, W, 3), uint8
+            initial_alpha: 初始 alpha (H, W), uint8
+            focus_strength: 精修強度 (0.0-1.0)
 
         Returns:
-            精修後的 alpha
+            精修後的 alpha (H, W), uint8
         """
-        # TODO: 實現 MODNet 推論邏輯
-        logger.debug("MODNet refinement (placeholder)")
-        return initial_alpha
+        if self._model is None:
+            logger.warning("MODNet model not loaded, using initial alpha")
+            return initial_alpha
+
+        try:
+            h, w = image.shape[:2]
+
+            # MODNet 預處理
+            # 調整大小到 512 的倍數（MODNet 要求）
+            ref_size = 512
+            im_h, im_w = image.shape[:2]
+            if max(im_h, im_w) < ref_size or min(im_h, im_w) > ref_size:
+                if im_w >= im_h:
+                    im_rh = ref_size
+                    im_rw = int(im_w / im_h * ref_size)
+                else:
+                    im_rw = ref_size
+                    im_rh = int(im_h / im_w * ref_size)
+            else:
+                im_rh = im_h
+                im_rw = im_w
+
+            im_rw = im_rw - im_rw % 32
+            im_rh = im_rh - im_rh % 32
+
+            # Resize 圖片
+            image_resized = cv2.resize(
+                image, (im_rw, im_rh), interpolation=cv2.INTER_AREA
+            )
+
+            # 檢查模型類型
+            if hasattr(self._model, "run"):  # ONNX Runtime
+                # 轉換為 ONNX 格式 (NCHW)
+                input_tensor = (
+                    image_resized.astype(np.float32).transpose(2, 0, 1) / 255.0
+                )
+                input_tensor = np.expand_dims(input_tensor, axis=0)
+
+                # 推論
+                input_name = self._model.get_inputs()[0].name
+                output_name = self._model.get_outputs()[0].name
+                matte = self._model.run([output_name], {input_name: input_tensor})[0]
+
+                # 轉回 numpy (squeeze batch + channel dimensions)
+                matte = matte[0, 0]
+
+            else:  # PyTorch 模型
+                from torchvision import transforms
+
+                # 轉換為 PyTorch tensor
+                transform = transforms.Compose(
+                    [
+                        transforms.ToTensor(),
+                        transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
+                    ]
+                )
+
+                input_tensor = transform(image_resized).unsqueeze(0).to(self.device)
+
+                # 推論
+                with torch.no_grad():
+                    _, _, matte = self._model(input_tensor, True)
+
+                # 轉回 numpy
+                matte = matte[0, 0].cpu().numpy()
+
+            # Resize 回原始大小
+            matte_resized = cv2.resize(matte, (w, h), interpolation=cv2.INTER_LINEAR)
+
+            # 轉換為 uint8
+            modnet_alpha = (matte_resized * 255).clip(0, 255).astype(np.uint8)
+
+            # 根據強度混合初始 alpha 和 MODNet 結果
+            initial_alpha_normalized = initial_alpha.astype(np.float32) / 255.0
+            modnet_alpha_normalized = modnet_alpha.astype(np.float32) / 255.0
+
+            # 混合：focus_strength 控制 MODNet 的影響力
+            blended = (
+                initial_alpha_normalized * (1 - focus_strength)
+                + modnet_alpha_normalized * focus_strength
+            )
+
+            logger.debug("MODNet refinement complete (strength: %.2f)", focus_strength)
+            return (blended * 255).clip(0, 255).astype(np.uint8)
+
+        except Exception as e:
+            logger.warning("MODNet refinement failed: %s. Using initial alpha.", e)
+            return initial_alpha
 
     def _refine_enhanced(
         self,
