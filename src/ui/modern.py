@@ -91,14 +91,13 @@ class ModernUI:
             資料夾路徑，若取消則返回 None
         """
         # 獲取最近使用的路徑
-        recent_paths = self._history.get_recent_input_paths()
+        recent_paths = self._history.load()
         choices: list[Choice | Separator | str] = []
 
         # 添加最近使用的路徑
         if recent_paths:
             choices.append(Separator("📁 最近使用"))
-            for path_str in recent_paths[:5]:  # 只顯示最近 5 個
-                path = Path(path_str)
+            for path in recent_paths[:5]:  # 只顯示最近 5 個
                 if path.exists():
                     choices.append(
                         Choice(
@@ -139,7 +138,7 @@ class ModernUI:
             folder = Path(path_str)
 
         # 記錄到歷史
-        self._history.add_input_path(folder)
+        self._history.save(folder)
         return folder
 
     def _select_operation(self) -> str | None:
