@@ -8,7 +8,6 @@ A comprehensive, production-grade image processing toolkit powered by state-of-t
 
 ### 🎯 Background Removal
 - **Ultra Backend** - Maximum quality with BRIA RMBG-2.0 (non-commercial)
-- **Unified Backend** - Commercial-ready with BiRefNet-massive (MIT)
 - **Advanced Processing** - Trimap refinement, multi-space defringing
 - **Color Optimization** - Special handling for green/white/black backgrounds
 - **Controllable Strength** - Fine-tune removal aggressiveness (0.1-1.0)
@@ -55,18 +54,11 @@ Output files are saved in `<input-folder>/output/`
 
 ### Background Removal
 
-#### Which Backend to Use?
-
-| Backend | Quality | Speed | License | Best For |
-|---------|---------|-------|---------|----------|
-| **Ultra** ⭐⭐⭐⭐⭐ | Extreme | Medium | **Non-commercial** | Personal projects, maximum quality |
-| **Unified** ⭐⭐⭐⭐ | Excellent | Fast | **MIT (commercial OK)** | Commercial projects, production use |
-
 #### Ultra Backend (Maximum Quality)
 
 **⚠️ Non-commercial use only (CC BY-NC 4.0)**
 
-The ultimate solution for personal users seeking the absolute best quality:
+The ultimate solution for users seeking the absolute best quality:
 
 **Features:**
 - **BRIA RMBG-2.0** - Professional-grade model with superior training data
@@ -75,27 +67,27 @@ The ultimate solution for personal users seeking the absolute best quality:
 - **Guided Filter** - Edge-aware smoothing (better than Gaussian blur)
 - **Color Filter** - Optimized for pure-color backgrounds
 
-#### Unified Backend (Commercial-Friendly)
-
-**✅ MIT License - Commercial use OK**
-
-Balanced solution combining quality and flexibility:
-
-**Features:**
-- **BiRefNet-massive** - SOTA segmentation with excellent edge preservation
-- **Alpha Matting** - Automatic refinement for complex edges
-- **Edge Defringing** - Removes color contamination
-- **Color Filter** - Pure-color background optimization
-
 #### Recommended Settings
 
 | Scenario | Strength | Color Filter |
 |----------|----------|--------------|
-| General photos | 0.5-0.7 | Off |
-| Complex edges (hair/fur) | 0.6-0.8 | Off |
-| Green screen | 0.7-0.9 | Green |
-| White background (product) | 0.7-0.9 | White |
-| Black background (studio) | 0.7-0.9 | Black |
+| General photos | 0.6-0.8 | Off |
+| Complex edges (hair/fur) | 0.7-0.9 | Off |
+| Green screen | 0.8-0.9 | Green |
+| White background (product) | 0.8-0.9 | White |
+| Black background (studio) | 0.8-0.9 | Black |
+
+#### When to Enable Color Filter?
+
+✅ **Enable** for:
+- Green screen photography/video
+- Product photography (pure white/black background)
+- ID photos (solid color background)
+
+❌ **Disable** for:
+- Natural scenes (complex backgrounds)
+- Gradient backgrounds
+- Mixed backgrounds
 
 ### Watermark Removal
 
@@ -134,21 +126,26 @@ Split large images into smaller tiles with intelligent layout.
 ```
 Input Image
     ↓
-Stage 1: BiRefNet Segmentation
-    ├─ High-resolution dichotomous segmentation
-    ├─ Dynamic alpha matting (auto-enabled at strength ≥ 0.3)
-    └─ Adaptive foreground/background thresholds
+Stage 1: BRIA RMBG-2.0 Segmentation
+    ├─ Professional-grade alpha matte generation
+    ├─ High-resolution processing (1024×1024)
+    └─ Strength-based threshold adjustment
     ↓
-Stage 2: Color Filter (Optional)
+Stage 2: Trimap Refinement (Optional)
+    ├─ Identify uncertain boundary regions
+    ├─ Guided filter for edge-aware smoothing
+    └─ Preserve fine details (hair, fur)
+    ↓
+Stage 3: Multi-space Defringing
+    ├─ RGB color balance analysis
+    ├─ LAB color space correction
+    └─ Alpha-based edge blending
+    ↓
+Stage 4: Color Filter (Optional)
     ├─ HSV/LAB color space detection
     ├─ Morphological mask refinement
     ├─ Edge despill (for green screens)
     └─ Alpha channel merging
-    ↓
-Stage 3: Edge Defringing
-    ├─ Half-transparent edge detection
-    ├─ Color imbalance analysis
-    └─ Edge color correction
     ↓
 Output PNG (RGBA)
 ```
@@ -156,9 +153,9 @@ Output PNG (RGBA)
 ### Performance
 
 - **Single Image**: 2-5 seconds (depends on resolution and hardware)
-- **Memory Usage**: ~3-4GB GPU (BiRefNet-massive), ~2GB CPU
+- **Memory Usage**: ~3-4GB GPU (BRIA RMBG-2.0), ~2GB CPU
 - **Batch Processing**: Efficient session reuse
-- **Quality**: Comparable to or better than commercial services
+- **Quality**: Professional-grade, comparable to commercial services
 
 ### Hardware Requirements
 
@@ -177,40 +174,41 @@ Output PNG (RGBA)
 | Cost | 💰 $0.20+/image | ✅ Free (hardware only) |
 | Quality | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
 | Features | Background removal only | ✅ Multi-tool suite |
-| License | Proprietary | ✅ MIT (main), CC BY-NC (Ultra) |
+| Commercial Use | ✅ Allowed (paid) | ⚠️ Non-commercial only |
 
 ## 📦 Dependencies
 
 All dependencies are open-source with permissive licenses:
 
-- **rembg** (MIT) — BiRefNet models for background removal
 - **transformers** (Apache 2.0) — HuggingFace transformers for BRIA RMBG-2.0
-- **onnxruntime** (MIT) — Runtime support for ONNX models
-- **pillow** (HPND) — Image processing utilities
-- **opencv-python** (Apache 2.0) — Computer vision operations
-- **InquirerPy** (MIT) — Interactive CLI interface
 - **torch** (BSD-3) — PyTorch deep learning framework
+- **opencv-python** (Apache 2.0) — Computer vision operations
+- **pillow** (HPND) — Image processing utilities
+- **InquirerPy** (MIT) — Interactive CLI interface
 - **numpy** (BSD-3) — Numerical computing
 
 ## 🙏 Acknowledgments
 
 This project builds upon excellent open-source work:
 
-- **BiRefNet** by [ZhengPeng7](https://github.com/ZhengPeng7/BiRefNet) - SOTA segmentation
 - **BRIA RMBG-2.0** by [BRIA AI](https://huggingface.co/briaai/RMBG-2.0) - Professional-grade model
-- **Rembg** by [danielgatis](https://github.com/danielgatis/rembg) - Background removal toolkit
+- **BiRefNet** by [ZhengPeng7](https://github.com/ZhengPeng7/BiRefNet) - SOTA segmentation research
 - **Gemini Watermark Remover** by [journey-ad](https://github.com/journey-ad/gemini-watermark-remover) - Watermark removal algorithm
-- **Cloudflare** - For [evaluating and recommending BiRefNet](https://blog.cloudflare.com/background-removal-with-workers-ai/)
+- **Cloudflare** - For [evaluating background removal models](https://blog.cloudflare.com/background-removal-with-workers-ai/)
 
 ## 📄 License
 
 **MIT License** - See [LICENSE](LICENSE) for details
 
-**Commercial use is fully allowed and encouraged** (except Ultra backend which requires non-commercial license).
-
 ### Ultra Backend License
 
-The Ultra backend uses BRIA RMBG-2.0 which is licensed under **CC BY-NC 4.0** (non-commercial). If you plan to use the Ultra backend commercially, please contact BRIA AI for licensing.
+⚠️ **Important**: The Ultra backend uses BRIA RMBG-2.0 which is licensed under **CC BY-NC 4.0** (non-commercial).
+
+**This means:**
+- ✅ Personal use is allowed and free
+- ✅ Research and educational use is allowed
+- ❌ Commercial use is NOT allowed without separate licensing
+- For commercial use, please contact BRIA AI for licensing
 
 ## 🌟 Star History
 

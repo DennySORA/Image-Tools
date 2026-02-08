@@ -8,13 +8,11 @@ from .gemini_watermark import GeminiWatermarkBackend
 from .image_splitter import ImageSplitterBackend
 from .registry import BackendRegistry
 from .ultra import UltraBackend
-from .unified import UnifiedBackend
 
 
 __all__ = [
     "BackendRegistry",
     "GeminiWatermarkBackend",
     "ImageSplitterBackend",
-    "UnifiedBackend",
     "UltraBackend",
 ]

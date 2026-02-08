@@ -107,10 +107,7 @@ class ApplicationService:
         backend_kwargs = {}
 
         # 如果需要色彩過濾，建立配置
-        if (
-            config.backend_name in ("unified", "ultra")
-            and "color_filter" in config.extra_config
-        ):
+        if config.backend_name == "ultra" and "color_filter" in config.extra_config:
             color_value = str(config.extra_config["color_filter"])
             color_filter = ColorFilterConfig(
                 enabled=True,

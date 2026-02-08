@@ -283,9 +283,9 @@ class ModernUI:
 
             if strength is None:
                 return None
-        elif backend_name in ("unified", "ultra"):
-            # 統一/極致後端：強度 + 可選色彩過濾
-            default_strength = 0.8 if backend_name == "ultra" else 0.7
+        elif backend_name == "ultra":
+            # 極致後端：強度 + 可選色彩過濾
+            default_strength = 0.8
             try:
                 strength = inquirer.number(  # type: ignore[attr-defined]
                     message="設定處理強度 (0.1-1.0):",

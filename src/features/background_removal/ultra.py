@@ -27,7 +27,7 @@ import numpy as np
 import torch
 from PIL import Image
 from torchvision import transforms  # type: ignore[import-untyped]
-from transformers import AutoModelForImageSegmentation  # type: ignore[import-untyped]
+from transformers import AutoModelForImageSegmentation
 
 from src.backends.registry import BackendRegistry
 from src.common import ColorFilter, ColorFilterConfig
