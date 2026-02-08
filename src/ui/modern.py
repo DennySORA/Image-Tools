@@ -34,54 +34,50 @@ class ModernUI:
     def __init__(self) -> None:
         """初始化 UI"""
         self._history = PathHistory()
-        self._operation_order = [
-            "watermark-removal",  # 水印移除
-            "image-splitting",  # 圖片分割
-            "background-removal",  # 背景移除
-        ]
 
     def run(self) -> ProcessConfig | None:
         """
-        執行互動式設定流程
+        執行互動式設定流程（支援 ESC 返回）
 
         Returns:
             處理設定，若使用者取消則返回 None
         """
         self._show_welcome()
 
-        # 步驟 1: 選擇資料夾
-        folder = self._select_folder()
-        if folder is None:
-            return None
+        while True:
+            # 步驟 1: 選擇資料夾
+            folder = self._select_folder()
+            if folder is None:
+                return None  # ESC 在第一步 = 退出程式
 
-        # 步驟 2: 選擇操作類型
-        operation = self._select_operation()
-        if operation is None:
-            # 返回步驟 1
-            return self.run()
+            # 步驟 2: 選擇操作類型
+            while True:
+                operation = self._select_operation()
+                if operation is None:
+                    break  # ESC = 返回步驟 1
 
-        # 步驟 3: 根據操作類型選擇後端
-        backend_config = self._select_backend_for_operation(operation)
-        if backend_config is None:
-            # 返回步驟 2
-            return self.run()
+                # 步驟 3: 根據操作類型選擇後端
+                while True:
+                    backend_config = self._select_backend_for_operation(operation)
+                    if backend_config is None:
+                        break  # ESC = 返回步驟 2
 
-        backend_name, model, strength = backend_config
+                    backend_name, model, strength = backend_config
 
-        # 建立並返回設定（直接執行，不再確認）
-        return ProcessConfig(
-            input_folder=folder,
-            backend_name=backend_name,
-            model=model,
-            strength=strength,
-        )
+                    # 建立並返回設定（直接執行，不再確認）
+                    return ProcessConfig(
+                        input_folder=folder,
+                        backend_name=backend_name,
+                        model=model,
+                        strength=strength,
+                    )
 
     def _show_welcome(self) -> None:
         """顯示歡迎訊息"""
         print("\n" + "=" * 60)
         print("🎨  圖片處理工具  🎨".center(60))
         print("=" * 60)
-        print("\n💡 提示：使用 ↑↓ 方向鍵選擇，Enter 確認，ESC 返回\n")
+        print("\n💡 提示：使用 ↑↓ 選擇，Enter 確認，ESC 返回上一步\n")
 
     def _select_folder(self) -> Path | None:
         """
@@ -97,43 +93,48 @@ class ModernUI:
         # 添加最近使用的路徑
         if recent_paths:
             choices.append(Separator("📁 最近使用"))
-            for path in recent_paths[:5]:  # 只顯示最近 5 個
-                if path.exists():
-                    choices.append(
-                        Choice(
-                            value=path,
-                            name=f"  {path.name} ({path.parent})",
-                        )
-                    )
+            choices.extend(
+                Choice(value=path, name=f"  {path.name} ({path.parent})")
+                for path in recent_paths[:5]
+                if path.exists()
+            )
             choices.append(Separator())
 
         # 添加輸入新路徑選項
         choices.append(Choice(value="__custom__", name="📝 輸入新路徑..."))
 
         # 顯示選擇器
-        folder = inquirer.select(
-            message="選擇輸入資料夾:",
-            choices=choices,
-            default=choices[1] if len(choices) > 2 else choices[0],  # type: ignore[arg-type]  # noqa: PLR2004
-            vi_mode=True,  # 支援 vi 模式
-        ).execute()
+        try:
+            folder = inquirer.select(
+                message="選擇輸入資料夾:",
+                choices=choices,
+                default=choices[1] if len(choices) > 2 else choices[0],  # type: ignore[arg-type]  # noqa: PLR2004
+                mandatory=False,  # 允許 ESC
+                mandatory_message="請選擇一個資料夾",
+            ).execute()
+        except KeyboardInterrupt:
+            return None
 
-        # 處理取消
+        # 處理 ESC (返回 None)
         if folder is None:
             return None
 
         # 處理自訂路徑
         if folder == "__custom__":
-            path_str = inquirer.filepath(
-                message="輸入資料夾路徑:",
-                default=str(Path.cwd()),
-                validate=lambda p: Path(p).exists() and Path(p).is_dir(),
-                invalid_message="路徑不存在或不是資料夾",
-                only_directories=True,
-            ).execute()
+            try:
+                path_str = inquirer.filepath(
+                    message="輸入資料夾路徑:",
+                    default=str(Path.cwd()),
+                    validate=lambda p: Path(p).exists() and Path(p).is_dir(),
+                    invalid_message="路徑不存在或不是資料夾",
+                    only_directories=True,
+                    mandatory=False,
+                ).execute()
+            except KeyboardInterrupt:
+                return self._select_folder()  # Ctrl+C = 返回選擇
 
             if path_str is None:
-                return self._select_folder()  # 返回選擇
+                return self._select_folder()  # ESC = 返回選擇
 
             folder = Path(path_str)
 
@@ -164,12 +165,15 @@ class ModernUI:
             ),
         ]
 
-        return inquirer.select(
-            message="選擇要執行的操作:",
-            choices=choices,
-            default=choices[1],  # 預設第一個操作
-            vi_mode=True,
-        ).execute()
+        try:
+            return inquirer.select(
+                message="選擇要執行的操作:",
+                choices=choices,
+                default=choices[1],  # 預設第一個操作
+                mandatory=False,
+            ).execute()
+        except KeyboardInterrupt:
+            return None
 
     def _select_backend_for_operation(
         self, operation: str
@@ -216,19 +220,24 @@ class ModernUI:
                 )
             )
 
-        backend_name = inquirer.select(
-            message="選擇後端:",
-            choices=choices,
-            default=choices[1],
-            vi_mode=True,
-        ).execute()
+        try:
+            backend_name = inquirer.select(
+                message="選擇後端:",
+                choices=choices,
+                default=choices[1],
+                mandatory=False,
+            ).execute()
+        except KeyboardInterrupt:
+            return None
 
         if backend_name is None:
             return None
 
         return self._configure_backend(backend_name)
 
-    def _configure_backend(self, backend_name: str) -> tuple[str, str, float] | None:
+    def _configure_backend(  # noqa: PLR0911
+        self, backend_name: str
+    ) -> tuple[str, str, float] | None:
         """
         配置後端參數
 
@@ -250,12 +259,15 @@ class ModernUI:
                 *[Choice(value=m, name=f"  {m}") for m in models],
             ]
 
-            model = inquirer.select(
-                message="選擇模型:",
-                choices=choices,
-                default=choices[1] if len(choices) > 1 else None,
-                vi_mode=True,
-            ).execute()
+            try:
+                model = inquirer.select(
+                    message="選擇模型:",
+                    choices=choices,
+                    default=choices[1] if len(choices) > 1 else None,
+                    mandatory=False,
+                ).execute()
+            except KeyboardInterrupt:
+                return None
 
             if model is None:
                 return None
@@ -266,25 +278,33 @@ class ModernUI:
             strength = 1.0
         elif backend_name == "image-splitter":
             # 圖片分割使用滑桿選擇填充大小
-            strength = inquirer.number(
-                message="設定裁切填充 (0.1-1.0, 影響透明邊距):",
-                min_allowed=0.1,
-                max_allowed=1.0,
-                default=0.5,
-                float_allowed=True,
-            ).execute()
+            try:
+                strength = inquirer.number(
+                    message="設定裁切填充 (0.1-1.0, 影響透明邊距):",
+                    min_allowed=0.1,
+                    max_allowed=1.0,
+                    default=0.5,
+                    float_allowed=True,
+                    mandatory=False,
+                ).execute()
+            except KeyboardInterrupt:
+                return None
 
             if strength is None:
                 return None
         else:
             # 背景移除使用滑桿選擇強度
-            strength = inquirer.number(
-                message="設定處理強度 (0.1-1.0):",
-                min_allowed=0.1,
-                max_allowed=1.0,
-                default=0.5,
-                float_allowed=True,
-            ).execute()
+            try:
+                strength = inquirer.number(
+                    message="設定處理強度 (0.1-1.0):",
+                    min_allowed=0.1,
+                    max_allowed=1.0,
+                    default=0.5,
+                    float_allowed=True,
+                    mandatory=False,
+                ).execute()
+            except KeyboardInterrupt:
+                return None
 
             if strength is None:
                 return None
