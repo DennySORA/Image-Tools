@@ -48,21 +48,29 @@ class ModernUI:
             # 步驟 1: 選擇資料夾
             folder = self._select_folder()
             if folder is None:
+                print("\n👋 ESC 已按下 - 退出程式")
                 return None  # ESC 在第一步 = 退出程式
+
+            print(f"\n✅ 已選擇資料夾: {folder}")
 
             # 步驟 2: 選擇操作類型
             while True:
                 operation = self._select_operation()
                 if operation is None:
+                    print("\n🔙 ESC 已按下 - 返回資料夾選擇")
                     break  # ESC = 返回步驟 1
+
+                print(f"\n✅ 已選擇操作: {operation}")
 
                 # 步驟 3: 根據操作類型選擇後端
                 while True:
                     backend_config = self._select_backend_for_operation(operation)
                     if backend_config is None:
+                        print("\n🔙 ESC 已按下 - 返回操作選擇")
                         break  # ESC = 返回步驟 2
 
                     backend_name, model, strength = backend_config
+                    print(f"\n✅ 已完成設定: {backend_name} / {model} / {strength:.2f}")
 
                     # 建立並返回設定（直接執行，不再確認）
                     return ProcessConfig(
@@ -77,7 +85,10 @@ class ModernUI:
         print("\n" + "=" * 60)
         print("🎨  圖片處理工具  🎨".center(60))
         print("=" * 60)
-        print("\n💡 提示：使用 ↑↓ 選擇，Enter 確認，ESC 返回上一步\n")
+        print("\n💡 提示：")
+        print("   • 使用 ↑↓ 方向鍵選擇選項")
+        print("   • Enter 確認選擇")
+        print("   • ESC 或選擇「⬅️  返回上一步」返回上一層\n")
 
     def _select_folder(self) -> Path | None:
         """
@@ -86,61 +97,62 @@ class ModernUI:
         Returns:
             資料夾路徑，若取消則返回 None
         """
-        # 獲取最近使用的路徑
-        recent_paths = self._history.load()
-        choices: list[Choice | Separator | str] = []
+        while True:  # Loop instead of recursion
+            # 獲取最近使用的路徑
+            recent_paths = self._history.load()
+            choices: list[Choice | Separator | str] = []
 
-        # 添加最近使用的路徑
-        if recent_paths:
-            choices.append(Separator("📁 最近使用"))
-            choices.extend(
-                Choice(value=path, name=f"  {path.name} ({path.parent})")
-                for path in recent_paths[:5]
-                if path.exists()
-            )
-            choices.append(Separator())
+            # 添加最近使用的路徑
+            if recent_paths:
+                choices.append(Separator("📁 最近使用"))
+                choices.extend(
+                    Choice(value=path, name=f"  {path.name} ({path.parent})")
+                    for path in recent_paths[:5]
+                    if path.exists()
+                )
+                choices.append(Separator())
 
-        # 添加輸入新路徑選項
-        choices.append(Choice(value="__custom__", name="📝 輸入新路徑..."))
+            # 添加輸入新路徑選項
+            choices.append(Choice(value="__custom__", name="📝 輸入新路徑..."))
 
-        # 顯示選擇器
-        try:
-            folder = inquirer.select(
-                message="選擇輸入資料夾:",
-                choices=choices,
-                default=choices[1] if len(choices) > 2 else choices[0],  # type: ignore[arg-type]  # noqa: PLR2004
-                mandatory=False,  # 允許 ESC
-                mandatory_message="請選擇一個資料夾",
-            ).execute()
-        except KeyboardInterrupt:
-            return None
-
-        # 處理 ESC (返回 None)
-        if folder is None:
-            return None
-
-        # 處理自訂路徑
-        if folder == "__custom__":
+            # 顯示選擇器
             try:
-                path_str = inquirer.filepath(
-                    message="輸入資料夾路徑:",
-                    default=str(Path.cwd()),
-                    validate=lambda p: Path(p).exists() and Path(p).is_dir(),
-                    invalid_message="路徑不存在或不是資料夾",
-                    only_directories=True,
-                    mandatory=False,
+                folder = inquirer.select(
+                    message="選擇輸入資料夾:",
+                    choices=choices,
+                    default=choices[1] if len(choices) > 2 else choices[0],  # type: ignore[arg-type]  # noqa: PLR2004
+                    mandatory=False,  # 允許 ESC
+                    mandatory_message="請選擇一個資料夾",
                 ).execute()
             except KeyboardInterrupt:
-                return self._select_folder()  # Ctrl+C = 返回選擇
+                return None
 
-            if path_str is None:
-                return self._select_folder()  # ESC = 返回選擇
+            # 處理 ESC (返回 None)
+            if folder is None:
+                return None
 
-            folder = Path(path_str)
+            # 處理自訂路徑
+            if folder == "__custom__":
+                try:
+                    path_str = inquirer.filepath(
+                        message="輸入資料夾路徑:",
+                        default=str(Path.cwd()),
+                        validate=lambda p: Path(p).exists() and Path(p).is_dir(),
+                        invalid_message="路徑不存在或不是資料夾",
+                        only_directories=True,
+                        mandatory=False,
+                    ).execute()
+                except KeyboardInterrupt:
+                    continue  # Ctrl+C = 返回選擇（重新循環）
 
-        # 記錄到歷史
-        self._history.save(folder)
-        return folder
+                if path_str is None:
+                    continue  # ESC = 返回選擇（重新循環）
+
+                folder = Path(path_str)
+
+            # 記錄到歷史
+            self._history.save(folder)
+            return folder
 
     def _select_operation(self) -> str | None:
         """
@@ -163,6 +175,8 @@ class ModernUI:
                 value="background-removal",
                 name="🎨 背景移除 - 使用 AI 移除背景",
             ),
+            Separator(),
+            Choice(value=None, name="⬅️  返回上一步"),
         ]
 
         try:
@@ -219,6 +233,8 @@ class ModernUI:
                     name=f"  {name} - {backend_class.description}",
                 )
             )
+        choices.append(Separator())
+        choices.append(Choice(value=None, name="⬅️  返回上一步"))
 
         try:
             backend_name = inquirer.select(
@@ -257,6 +273,8 @@ class ModernUI:
             choices: list[Choice | Separator] = [
                 Separator(f"⚙️  {backend_name} - 選擇模型"),
                 *[Choice(value=m, name=f"  {m}") for m in models],
+                Separator(),
+                Choice(value=None, name="⬅️  返回上一步"),
             ]
 
             try:
