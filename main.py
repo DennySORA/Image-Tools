@@ -42,10 +42,23 @@ def main() -> int:
             ui.show_summary(config)
 
             # 3. 建立後端
+            # 如果是 unified 後端且有 color_filter 設定，需要建立 ColorFilterConfig
+            backend_kwargs = {}
+            if config.backend_name == "unified" and "color_filter" in config.extra_config:
+                from src.backends.unified import ColorFilter, ColorFilterConfig
+
+                color_filter = ColorFilterConfig(
+                    enabled=True,
+                    color=ColorFilter(config.extra_config["color_filter"]),
+                    edge_refine_strength=config.strength,  # 使用主強度參數
+                )
+                backend_kwargs["color_filter"] = color_filter
+
             backend = BackendRegistry.create(
                 name=config.backend_name,
                 model=config.model,
                 strength=config.strength,
+                **backend_kwargs,
             )
 
             # 4. 建立處理器並處理圖片

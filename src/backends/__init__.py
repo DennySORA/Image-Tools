@@ -11,6 +11,7 @@ from .image_splitter import ImageSplitterBackend
 from .registry import BackendRegistry
 from .rembg import RembgBackend
 from .transparent_bg import TransparentBgBackend
+from .unified import UnifiedBackend
 
 
 __all__ = [
@@ -21,4 +22,5 @@ __all__ = [
     "GreenScreenBackend",
     "GeminiWatermarkBackend",
     "ImageSplitterBackend",
+    "UnifiedBackend",
 ]

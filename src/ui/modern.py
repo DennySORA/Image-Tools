@@ -69,7 +69,7 @@ class ModernUI:
                         print("\n🔙 ESC 已按下 - 返回操作選擇")
                         break  # ESC = 返回步驟 2
 
-                    backend_name, model, strength = backend_config
+                    backend_name, model, strength, extra_config = backend_config
                     print(f"\n✅ 已完成設定: {backend_name} / {model} / {strength:.2f}")
 
                     # 建立並返回設定（直接執行，不再確認）
@@ -78,6 +78,7 @@ class ModernUI:
                         backend_name=backend_name,
                         model=model,
                         strength=strength,
+                        extra_config=extra_config,
                     )
 
     def _show_welcome(self) -> None:
@@ -191,7 +192,7 @@ class ModernUI:
 
     def _select_backend_for_operation(
         self, operation: str
-    ) -> tuple[str, str, float] | None:
+    ) -> tuple[str, str, float, dict] | None:
         """
         根據操作類型選擇對應的後端
 
@@ -199,61 +200,26 @@ class ModernUI:
             operation: 操作類型
 
         Returns:
-            (backend_name, model, strength) 或 None
+            (backend_name, model, strength, extra_config) 或 None
         """
-        # 根據操作類型映射到對應的後端
+        # 根據操作類型映射到對應的後端（簡化為單一後端）
         backend_map = {
-            "watermark-removal": ["gemini-watermark"],
-            "image-splitting": ["image-splitter"],
-            "background-removal": [
-                "rembg",
-                "transparent-background",
-                "backgroundremover",
-                "greenscreen",
-            ],
+            "watermark-removal": "gemini-watermark",
+            "image-splitting": "image-splitter",
+            "background-removal": "unified",  # 統一使用新的 unified 後端
         }
 
-        available_backends = backend_map.get(operation, [])
-        if not available_backends:
+        backend_name = backend_map.get(operation)
+        if not backend_name:
             print(f"⚠️  未找到對應的後端: {operation}")
             return None
 
-        # 如果只有一個後端，直接使用
-        if len(available_backends) == 1:
-            backend_name = available_backends[0]
-            return self._configure_backend(backend_name)
-
-        # 多個後端，讓使用者選擇
-        choices = [Separator(f"🔧 {operation} - 選擇後端")]
-        for name in available_backends:
-            backend_class = BackendRegistry.get(name)
-            choices.append(
-                Choice(
-                    value=name,
-                    name=f"  {name} - {backend_class.description}",
-                )
-            )
-        choices.append(Separator())
-        choices.append(Choice(value=None, name="⬅️  返回上一步"))
-
-        try:
-            backend_name = inquirer.select(
-                message="選擇後端:",
-                choices=choices,
-                default=choices[1],
-                mandatory=False,
-            ).execute()
-        except KeyboardInterrupt:
-            return None
-
-        if backend_name is None:
-            return None
-
+        # 直接配置後端
         return self._configure_backend(backend_name)
 
     def _configure_backend(  # noqa: PLR0911
         self, backend_name: str
-    ) -> tuple[str, str, float] | None:
+    ) -> tuple[str, str, float, dict] | None:
         """
         配置後端參數
 
@@ -261,10 +227,11 @@ class ModernUI:
             backend_name: 後端名稱
 
         Returns:
-            (backend_name, model, strength) 或 None
+            (backend_name, model, strength, extra_config) 或 None
         """
         backend_class = BackendRegistry.get(backend_name)
         models = backend_class.get_available_models()
+        extra_config: dict = {}
 
         # 選擇模型
         if len(models) == 1:
@@ -310,8 +277,62 @@ class ModernUI:
 
             if strength is None:
                 return None
+        elif backend_name == "unified":
+            # 統一後端：強度 + 可選色彩過濾
+            try:
+                strength = inquirer.number(
+                    message="設定處理強度 (0.1-1.0):",
+                    min_allowed=0.1,
+                    max_allowed=1.0,
+                    default=0.7,  # 統一後端推薦 0.7
+                    float_allowed=True,
+                    mandatory=False,
+                ).execute()
+            except KeyboardInterrupt:
+                return None
+
+            if strength is None:
+                return None
+
+            # 詢問是否啟用色彩過濾
+            try:
+                enable_filter = inquirer.confirm(
+                    message="啟用純色背景過濾？（針對純黑/純白/綠幕背景）",
+                    default=False,
+                    mandatory=False,
+                ).execute()
+            except KeyboardInterrupt:
+                return None
+
+            if enable_filter is None:
+                return None
+
+            if enable_filter:
+                # 選擇背景顏色
+                color_choices = [
+                    Choice(value="green", name="🟢 綠幕背景"),
+                    Choice(value="white", name="⚪ 純白背景"),
+                    Choice(value="black", name="⚫ 純黑背景"),
+                    Separator(),
+                    Choice(value=None, name="⬅️  返回上一步"),
+                ]
+
+                try:
+                    bg_color = inquirer.select(
+                        message="選擇背景顏色類型:",
+                        choices=color_choices,
+                        default=color_choices[0],
+                        mandatory=False,
+                    ).execute()
+                except KeyboardInterrupt:
+                    return None
+
+                if bg_color is None:
+                    return None
+
+                extra_config["color_filter"] = bg_color
         else:
-            # 背景移除使用滑桿選擇強度
+            # 其他背景移除使用滑桿選擇強度
             try:
                 strength = inquirer.number(
                     message="設定處理強度 (0.1-1.0):",
@@ -327,7 +348,7 @@ class ModernUI:
             if strength is None:
                 return None
 
-        return (backend_name, model, strength)
+        return (backend_name, model, strength, extra_config)
 
     def show_summary(self, config: ProcessConfig) -> None:
         """

@@ -52,6 +52,7 @@ class ProcessConfig:
         model: 使用的模型名稱
         strength: 去背強度 (0.1-1.0)
         output_folder: 輸出資料夾路徑 (預設為 input_folder/output)
+        extra_config: 額外設定（如色彩過濾等）
     """
 
     input_folder: Path
@@ -59,6 +60,7 @@ class ProcessConfig:
     model: str
     strength: float
     output_folder: Path | None = field(default=None)
+    extra_config: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         # frozen=True 時需要使用 object.__setattr__
