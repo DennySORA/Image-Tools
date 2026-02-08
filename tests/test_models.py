@@ -1,30 +1,31 @@
-import sys
+"""
+模型類別簡單測試
+"""
+
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.append(str(ROOT))
+import pytest
 
 from src.core.models import ProcessConfig, is_supported_image
 
 
 def test_process_config_default_output(tmp_path: Path) -> None:
+    """測試 ProcessConfig 預設輸出路徑"""
     config = ProcessConfig(
         input_folder=tmp_path,
-        backend_name="rembg",
-        model="u2net",
-        strength=0.5,
+        backend_name="ultra",
+        model="auto",
+        strength=0.7,
     )
-
     assert config.output_folder == tmp_path / "output"
 
 
 def test_is_supported_image(tmp_path: Path) -> None:
-    image_path = tmp_path / "sample.png"
-    image_path.write_bytes(b"fake")
+    """測試支援的圖片格式"""
+    jpg_file = tmp_path / "test.jpg"
+    jpg_file.touch()
+    assert is_supported_image(jpg_file) is True
 
-    text_path = tmp_path / "sample.txt"
-    text_path.write_text("not an image")
-
-    assert is_supported_image(image_path)
-    assert not is_supported_image(text_path)
+    txt_file = tmp_path / "test.txt"
+    txt_file.touch()
+    assert is_supported_image(txt_file) is False

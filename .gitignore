@@ -28,3 +28,7 @@ test_*.py
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
