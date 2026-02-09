@@ -16,6 +16,7 @@ from .alpha_config import (
     unpremultiply_alpha,
 )
 from .color_filter import ColorFilter, ColorFilterConfig
+from .model_compat import load_pretrained_no_meta
 from .preset_config import (
     BackgroundRemovalPreset,
     PresetLevel,
@@ -42,4 +43,5 @@ __all__ = [
     "get_preset",
     "list_presets",
     "print_preset_comparison",
+    "load_pretrained_no_meta",
 ]

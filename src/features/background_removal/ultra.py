@@ -27,7 +27,6 @@ import numpy as np
 import torch
 from PIL import Image
 from torchvision import transforms  # type: ignore[import-untyped]
-from transformers import AutoModelForImageSegmentation
 
 from src.backends.registry import BackendRegistry
 from src.common import (
@@ -38,6 +37,7 @@ from src.common import (
     ResolutionMode,
     calculate_adaptive_resolution,
     decontaminate_edges,
+    load_pretrained_no_meta,
     premultiply_alpha,
 )
 from src.common.preset_config import PresetLevel, get_preset
@@ -145,46 +145,28 @@ class UltraBackend(BaseBackend):
         # 人像 matting 精修器（延遲初始化）
         self._portrait_refiner: PortraitMattingRefiner | None = None
 
-        logger.info("Ultra backend initialized (NON-COMMERCIAL USE ONLY)")
-        logger.info("  Model: BRIA RMBG-2.0")
-        logger.info("  Device: %s", self.device)
-        logger.info("  Strength: %.2f", self.strength)
-        logger.info("  Trimap refinement: %s", self.use_trimap_refine)
-        logger.info("  Portrait matting: %s", self.use_portrait_matting)
-        if self.use_portrait_matting:
-            logger.info("  Portrait strength: %.2f", self.portrait_matting_strength)
-            logger.info("  Portrait model: %s", self.portrait_matting_model)
-        logger.info("  Color filter: %s", self.color_filter.color.value)
-        logger.info("  Alpha mode: %s", self.alpha_config.mode.value)
-        logger.info("  Resolution mode: %s", self.resolution_config.mode.value)
         logger.info(
-            "  Edge decontamination: %s", self.alpha_config.edge_decontamination
+            "Ultra backend: device=%s, strength=%.1f, trimap=%s, portrait=%s (CC BY-NC 4.0)",
+            self.device,
+            self.strength,
+            self.use_trimap_refine,
+            self.use_portrait_matting,
         )
 
     def load_model(self) -> None:
         """載入 RMBG-2.0 模型"""
-        logger.info("Loading BRIA RMBG-2.0 model...")
-        logger.info("⚠️  This model is for NON-COMMERCIAL use only (CC BY-NC 4.0)")
+        logger.info("Loading RMBG-2.0 model...")
 
-        # 載入模型
-        self._model = AutoModelForImageSegmentation.from_pretrained(
-            self.MODEL_NAME, trust_remote_code=True
-        )
+        # 載入模型（跳過 meta device 初始化，避免自訂 birefnet.py 呼叫 .item() 失敗）
+        self._model = load_pretrained_no_meta(self.MODEL_NAME)
         self._model.to(self.device)
         self._model.eval()
 
-        # torch.compile() 加速（PyTorch 2.0+，MPS 不支援）
-        if hasattr(torch, "compile") and self.device.type != "mps":
-            try:
-                self._model = torch.compile(self._model, mode="reduce-overhead")
-                logger.info("torch.compile() enabled (mode: reduce-overhead)")
-            except Exception:
-                logger.warning(
-                    "torch.compile() failed, using eager mode",
-                    exc_info=True,
-                )
+        # 啟用 TF32（Ampere+ GPU 自動加速 float32 矩陣運算）
+        if self.device.type == "cuda":
+            torch.set_float32_matmul_precision("high")
 
-        logger.info("RMBG-2.0 model loaded successfully")
+        logger.info("RMBG-2.0 model loaded on %s", self.device)
 
     def _apply_rmbg_segmentation(self, image: Image.Image) -> np.ndarray:
         """
@@ -230,11 +212,12 @@ class UltraBackend(BaseBackend):
         input_tensor = transform(image).unsqueeze(0).to(self.device)
 
         with torch.no_grad():
-            output = self._model(input_tensor)[0][0]
+            # 取最高解析度輸出（[-1]），sigmoid 轉為 0-1 機率，移除 batch/channel 維度
+            output = self._model(input_tensor)[-1].sigmoid().squeeze()
 
         # 轉為 numpy 並調整大小回原圖
         alpha = output.cpu().numpy()
-        alpha = (alpha * PIXEL_MAX_VALUE).astype(np.uint8)
+        alpha = (alpha * PIXEL_MAX_VALUE).clip(0, PIXEL_MAX_VALUE).astype(np.uint8)
 
         # Resize 回原始尺寸（使用高品質插值）
         return cv2.resize(alpha, original_size, interpolation=cv2.INTER_CUBIC)  # type: ignore[no-any-return]
@@ -808,8 +791,7 @@ class UltraBackend(BaseBackend):
         # 覆蓋色彩過濾（如果提供）
         final_color_filter = color_filter or preset.color_filter
 
-        logger.info("Creating UltraBackend from preset: %s", preset.level_name)
-        logger.info("  Description: %s", preset.description)
+        logger.info("Using preset: %s", preset.level_name)
 
         # 建立實例
         return cls(

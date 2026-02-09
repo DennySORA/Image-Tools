@@ -7,7 +7,14 @@
 import logging
 
 from src.backends.registry import BackendRegistry
-from src.common import ColorFilter, ColorFilterConfig
+from src.common import (
+    AlphaConfig,
+    AlphaMode,
+    ColorFilter,
+    ColorFilterConfig,
+    ResolutionConfig,
+    ResolutionMode,
+)
 from src.core.interfaces import BackendProtocol
 from src.core.processor import ImageProcessor
 from src.data_model import ProcessConfig, ProcessResult
@@ -106,15 +113,8 @@ class ApplicationService:
         """
         backend_kwargs = {}
 
-        # 如果需要色彩過濾，建立配置
-        if config.backend_name == "ultra" and "color_filter" in config.extra_config:
-            color_value = str(config.extra_config["color_filter"])
-            color_filter = ColorFilterConfig(
-                enabled=True,
-                color=ColorFilter(color_value),
-                edge_refine_strength=config.strength,
-            )
-            backend_kwargs["color_filter"] = color_filter
+        if config.backend_name == "ultra":
+            backend_kwargs = self._build_ultra_kwargs(config)
 
         # 使用註冊表建立後端（工廠模式）
         return self.backend_registry.create(
@@ -123,6 +123,58 @@ class ApplicationService:
             strength=config.strength,
             **backend_kwargs,
         )
+
+    def _build_ultra_kwargs(self, config: ProcessConfig) -> dict[str, object]:
+        """
+        從 extra_config 建構 Ultra 後端的完整參數
+
+        Args:
+            config: 處理配置
+
+        Returns:
+            Ultra 後端建構參數
+        """
+        extra = config.extra_config
+        kwargs: dict[str, object] = {}
+
+        # 色彩過濾
+        color_value = str(extra.get("color_filter", "none"))
+        if color_value != "none":
+            kwargs["color_filter"] = ColorFilterConfig(
+                enabled=True,
+                color=ColorFilter(color_value),
+                edge_refine_strength=config.strength,
+            )
+
+        # Trimap 精修
+        if "use_trimap_refine" in extra:
+            kwargs["use_trimap_refine"] = bool(extra["use_trimap_refine"])
+
+        # 人像 Matting 精修
+        if "use_portrait_matting" in extra:
+            kwargs["use_portrait_matting"] = bool(extra["use_portrait_matting"])
+        if "portrait_matting_strength" in extra:
+            kwargs["portrait_matting_strength"] = float(
+                extra["portrait_matting_strength"]  # type: ignore[arg-type]
+            )
+        if "portrait_matting_model" in extra:
+            kwargs["portrait_matting_model"] = str(extra["portrait_matting_model"])
+
+        # Alpha 設定
+        alpha_mode = str(extra.get("alpha_mode", "straight"))
+        edge_decontam = bool(extra.get("edge_decontamination", True))
+        kwargs["alpha_config"] = AlphaConfig(
+            mode=AlphaMode(alpha_mode),
+            edge_decontamination=edge_decontam,
+        )
+
+        # 解析度設定
+        resolution = str(extra.get("resolution_mode", "1024"))
+        kwargs["resolution_config"] = ResolutionConfig(
+            mode=ResolutionMode(resolution),
+        )
+
+        return kwargs
 
     def _display_result(self, result: ProcessResult) -> None:
         """

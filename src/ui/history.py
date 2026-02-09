@@ -1,14 +1,16 @@
 """
-路徑歷史記錄模組
+歷史記錄模組
 
-管理使用者曾經使用過的資料夾路徑，提供快速選擇功能
+管理使用者曾經使用過的資料夾路徑和後端設定，提供快速選擇功能
 """
 
 import json
 from pathlib import Path
+from typing import Any
 
 
 _HISTORY_FILE = ".rembg_history.json"
+_SETTINGS_FILE = ".ultra_settings.json"
 _MAX_ENTRIES = 10
 
 
@@ -74,5 +76,55 @@ class PathHistory:
         data = [str(p) for p in entries]
         self._history_file.write_text(
             json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+
+class SettingsHistory:
+    """
+    後端設定歷史管理
+
+    負責讀寫後端設定到 JSON 檔案，用於記住上一次的設定
+    """
+
+    def __init__(self, base_dir: Path | None = None) -> None:
+        """
+        初始化設定歷史
+
+        Args:
+            base_dir: 設定檔案所在目錄，預設為目前工作目錄
+        """
+        root = base_dir or Path.cwd()
+        self._settings_file = root / _SETTINGS_FILE
+
+    def load(self) -> dict[str, Any] | None:
+        """
+        讀取上一次的設定
+
+        Returns:
+            設定字典，若無歷史則返回 None
+        """
+        if not self._settings_file.exists():
+            return None
+
+        try:
+            data = json.loads(self._settings_file.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return None
+
+        if not isinstance(data, dict):
+            return None
+
+        return data
+
+    def save(self, settings: dict[str, Any]) -> None:
+        """
+        儲存設定
+
+        Args:
+            settings: 設定字典
+        """
+        self._settings_file.write_text(
+            json.dumps(settings, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )

@@ -99,10 +99,9 @@ class PortraitMattingRefiner:
         self._model_loaded = False
         self._transform: transforms.Compose | None = None
 
-        logger.info("Portrait matting refiner initialized")
-        logger.info("  Model: %s", self.model_name)
-        logger.info("  Device: %s", self.device)
-        logger.info("  High-res mode: %s", self.enable_hr_mode)
+        logger.info(
+            "Portrait matting: model=%s, device=%s", self.model_name, self.device
+        )
 
     def load_model(self) -> None:
         """載入人像 matting 模型"""
@@ -131,7 +130,7 @@ class PortraitMattingRefiner:
         - Hugging Face: ZhengPeng7/BiRefNet-matting
         - 授權：MIT License
         """
-        from transformers import AutoModelForImageSegmentation
+        from src.common.model_compat import load_pretrained_no_meta
 
         repo_id = BIREFNET_MODELS[self.model_name]
         input_size = BIREFNET_INPUT_SIZES[self.model_name]
@@ -139,22 +138,13 @@ class PortraitMattingRefiner:
         try:
             logger.info("Loading BiRefNet model: %s ...", repo_id)
 
-            self._model = AutoModelForImageSegmentation.from_pretrained(
-                repo_id, trust_remote_code=True
-            )
+            self._model = load_pretrained_no_meta(repo_id)
             self._model.to(self.device)
             self._model.eval()
 
-            # torch.compile() 加速（MPS 不支援）
-            if hasattr(torch, "compile") and self.device.type != "mps":
-                try:
-                    self._model = torch.compile(self._model, mode="reduce-overhead")
-                    logger.info("torch.compile() enabled for BiRefNet")
-                except Exception:
-                    logger.debug(
-                        "torch.compile() unavailable for BiRefNet",
-                        exc_info=True,
-                    )
+            # 啟用 TF32（Ampere+ GPU 自動加速 float32 矩陣運算）
+            if self.device.type == "cuda":
+                torch.set_float32_matmul_precision("high")
 
             # 建立預處理轉換器
             self._transform = transforms.Compose(
@@ -166,7 +156,7 @@ class PortraitMattingRefiner:
             )
 
             self._model_loaded = True
-            logger.info("BiRefNet loaded successfully (%s)", self.model_name)
+            logger.info("BiRefNet loaded on %s", self.device)
 
         except Exception as e:
             logger.warning(
