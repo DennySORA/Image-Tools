@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
 
+import numpy as np
 from PIL import Image
 
 from src.backends.registry import BackendRegistry
@@ -28,7 +29,6 @@ ALPHA_THRESHOLD: float = 0.002  # 忽略極小的 alpha 值 (雜訊)
 MAX_ALPHA: float = 0.99  # 避免除以接近零的值
 LOGO_VALUE: int = 255  # 白色浮水印參考值
 MIN_PIXEL_CHANNELS: int = 3  # RGB 最小通道數
-MIN_ALPHA_CHANNELS: int = 4  # RGBA 最小通道數
 
 # 參考圖片目錄
 ASSETS_DIR: Path = Path(__file__).parent / "assets"
@@ -69,7 +69,7 @@ def _load_reference_image(size: int) -> Image.Image:
     return Image.open(path).convert("RGB")
 
 
-def _calculate_alpha_map(bg_image: Image.Image) -> list[float]:
+def _calculate_alpha_map(bg_image: Image.Image) -> np.ndarray:
     """
     從參考背景圖片計算 alpha 通道映射。
 
@@ -79,15 +79,11 @@ def _calculate_alpha_map(bg_image: Image.Image) -> list[float]:
         bg_image: 參考背景圖片
 
     Returns:
-        alpha 映射列表
+        alpha 映射 (NumPy array, float64, shape: H*W)
     """
-    pixels = list(bg_image.getdata())
-    alpha_map: list[float] = []
-    for pixel in pixels:
-        r, g, b = pixel[0], pixel[1], pixel[2]
-        max_channel = max(r, g, b)
-        alpha_map.append(max_channel / 255.0)
-    return alpha_map
+    pixels = np.array(bg_image)[:, :, :3]  # (H, W, 3)
+    result: np.ndarray = pixels.max(axis=2).ravel().astype(np.float64) / 255.0
+    return result
 
 
 def _detect_watermark_config(width: int, height: int) -> WatermarkConfig:
@@ -133,7 +129,7 @@ def _calculate_watermark_position(
 class _WatermarkRemovalParams:
     """浮水印移除參數。"""
 
-    alpha_map: list[float]
+    alpha_map: np.ndarray
     x: int
     y: int
     size: int
@@ -143,81 +139,57 @@ class _WatermarkRemovalParams:
 def _remove_watermark(
     image: Image.Image,
     params: _WatermarkRemovalParams,
-) -> None:
+) -> Image.Image:
     """
-    使用反向 Alpha 混合演算法移除浮水印 (原地修改圖片)。
+    使用反向 Alpha 混合演算法移除浮水印（NumPy 向量化）。
 
     對 RGB 三通道進行反向混合，RGBA 圖片同時也還原 alpha 通道。
 
     Args:
         image: 要處理的圖片
         params: 浮水印移除參數
+
+    Returns:
+        處理後的圖片
     """
-    pixels = image.load()
-    if pixels is None:
-        return
-
     has_alpha = image.mode == "RGBA"
+    img_arr = np.array(image, dtype=np.float64)
 
-    for row in range(params.size):
-        for col in range(params.size):
-            alpha_idx = row * params.size + col
-            wm_alpha = params.alpha_map[alpha_idx]
+    # 提取浮水印區域
+    y1, y2 = params.y, params.y + params.size
+    x1, x2 = params.x, params.x + params.size
+    region = img_arr[y1:y2, x1:x2].copy()
 
-            # 忽略極小的 alpha 值 (雜訊)
-            if wm_alpha < ALPHA_THRESHOLD:
-                continue
+    # 重塑 alpha_map 為 (size, size)
+    wm_alpha = params.alpha_map.reshape(params.size, params.size).copy()
 
-            # 限制 alpha 值以避免除以接近零的值
-            wm_alpha = min(wm_alpha, MAX_ALPHA)
-            one_minus_alpha = 1.0 - wm_alpha
+    # 忽略極小的 alpha 值 (雜訊)
+    active = wm_alpha >= ALPHA_THRESHOLD
+    # 限制 alpha 值以避免除以接近零的值
+    wm_alpha = np.clip(wm_alpha, 0.0, MAX_ALPHA)
+    one_minus_alpha = 1.0 - wm_alpha
 
-            px_x = params.x + col
-            px_y = params.y + row
-            px = pixels[px_x, px_y]
+    # 避免除以零
+    safe_divisor = np.where(active, one_minus_alpha, 1.0)
 
-            # 對 RGB 三個通道分別進行反向 Alpha 混合
-            # Ensure px is a tuple/sequence (not a single float)
-            if not isinstance(px, (tuple, list)):
-                continue
+    # 對 RGB 三通道進行反向 Alpha 混合
+    for c in range(3):
+        watermarked = region[:, :, c]
+        original = (watermarked - wm_alpha * LOGO_VALUE) / safe_divisor
+        blended = watermarked * (1.0 - params.strength) + original * params.strength
+        region[:, :, c] = np.where(active, blended, watermarked)
 
-            new_channels: list[int] = []
-            for c in range(3):
-                watermarked = px[c]
-                original = (watermarked - wm_alpha * LOGO_VALUE) / one_minus_alpha
+    # RGBA 圖片同時還原 alpha 通道
+    if has_alpha and region.shape[2] > MIN_PIXEL_CHANNELS:
+        wm_a = region[:, :, 3]
+        orig_a = (wm_a - wm_alpha * LOGO_VALUE) / safe_divisor
+        blended_a = wm_a * (1.0 - params.strength) + orig_a * params.strength
+        region[:, :, 3] = np.where(active, blended_a, wm_a)
 
-                # 依據強度混合原始值和校正值
-                blended = (
-                    watermarked * (1.0 - params.strength) + original * params.strength
-                )
+    # 限制在 [0, 255] 並寫回
+    img_arr[y1:y2, x1:x2] = np.clip(region, 0, 255)
 
-                # 限制在 [0, 255] 範圍內
-                new_channels.append(max(0, min(255, round(blended))))
-
-            if has_alpha:
-                # 同時還原 alpha 通道
-                # 浮水印公式: wm_a = α × 255 + (1 - α) × orig_a
-                # 反向: orig_a = (wm_a - α × 255) / (1 - α)
-                if not isinstance(px, (tuple, list)) or len(px) <= MIN_PIXEL_CHANNELS:
-                    continue
-                orig_alpha = (px[3] - wm_alpha * LOGO_VALUE) / one_minus_alpha
-                blended_alpha = (
-                    px[3] * (1.0 - params.strength) + orig_alpha * params.strength
-                )
-                new_a = max(0, min(255, round(blended_alpha)))
-
-                pixels[px_x, px_y] = (
-                    new_channels[0],
-                    new_channels[1],
-                    new_channels[2],
-                    new_a,
-                )
-            else:
-                pixels[px_x, px_y] = (
-                    new_channels[0],
-                    new_channels[1],
-                    new_channels[2],
-                )
+    return Image.fromarray(np.round(img_arr).astype(np.uint8), mode=image.mode)
 
 
 @BackendRegistry.register("gemini-watermark")
@@ -249,7 +221,7 @@ class GeminiWatermarkBackend(BaseBackend):
             raise ValueError(f"不支援的模式: {model}，可用模式: {AVAILABLE_MODES}")
 
         self.model = model
-        self._alpha_maps: dict[int, list[float]] = {}
+        self._alpha_maps: dict[int, np.ndarray] = {}
 
     def load_model(self) -> None:
         """載入參考圖片並預先計算 alpha 映射。"""
@@ -272,7 +244,7 @@ class GeminiWatermarkBackend(BaseBackend):
 
         logger.info("Gemini Watermark reference images loaded")
 
-    def _get_alpha_map(self, logo_size: int) -> list[float]:
+    def _get_alpha_map(self, logo_size: int) -> np.ndarray:
         """
         取得指定尺寸的 alpha 映射，必要時動態載入。
 
@@ -280,7 +252,7 @@ class GeminiWatermarkBackend(BaseBackend):
             logo_size: 浮水印尺寸
 
         Returns:
-            alpha 映射列表
+            alpha 映射 (NumPy array)
         """
         alpha_map = self._alpha_maps.get(logo_size)
         if alpha_map is None:
@@ -345,7 +317,7 @@ class GeminiWatermarkBackend(BaseBackend):
                 image = image.convert("RGB")  # type: ignore[assignment]
 
             # 移除浮水印
-            _remove_watermark(
+            result = _remove_watermark(
                 image,
                 _WatermarkRemovalParams(
                     alpha_map=alpha_map,
@@ -357,8 +329,9 @@ class GeminiWatermarkBackend(BaseBackend):
             )
 
             # 儲存結果
-            image.save(output_path, "PNG")
+            result.save(output_path, "PNG")
             image.close()
+            result.close()
 
         except Exception:
             logger.exception("Gemini watermark removal failed: %s", input_path.name)
