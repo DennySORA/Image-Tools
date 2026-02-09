@@ -5,8 +5,11 @@
 依賴抽象介面而非具體實作，遵循依賴反轉原則 (DIP)
 """
 
+import logging
 import sys
+import threading
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from src.data_model import (
@@ -19,17 +22,22 @@ from src.data_model import (
 from .interfaces import BackendProtocol
 
 
+logger = logging.getLogger(__name__)
+
+
 class ImageProcessor:
     """
     圖片處理器
 
     負責批次處理資料夾中的圖片，遵循單一職責原則
+    支援序列和並行處理模式
     """
 
     def __init__(
         self,
         backend: BackendProtocol,
         progress_callback: Callable[[int, int, str], None] | None = None,
+        max_workers: int = 1,
     ):
         """
         初始化處理器
@@ -37,9 +45,12 @@ class ImageProcessor:
         Args:
             backend: 背景移除後端
             progress_callback: 進度回調函數 (current, total, filename)
+            max_workers: 並行工作執行緒數（1=序列處理，>1=並行處理）
         """
         self._backend = backend
         self._progress_callback = progress_callback or self._default_progress
+        self._max_workers = max(1, max_workers)
+        self._progress_lock = threading.Lock()
 
     @staticmethod
     def _default_progress(current: int, total: int, filename: str) -> None:
@@ -62,6 +73,8 @@ class ImageProcessor:
     def process_folder(self, config: ProcessConfig) -> ProcessResult:
         """
         處理資料夾中的所有圖片
+
+        根據 max_workers 自動選擇序列或並行模式
 
         Args:
             config: 處理設定
@@ -91,7 +104,26 @@ class ImageProcessor:
         # 載入模型
         self._backend.load_model()
 
-        # 處理每張圖片
+        # 根據 worker 數量選擇處理模式
+        if self._max_workers <= 1 or total == 1:
+            success_count = self._process_sequential(image_files, output_folder, total)
+        else:
+            success_count = self._process_parallel(image_files, output_folder, total)
+
+        return ProcessResult(
+            total=total,
+            success=success_count,
+            failed=total - success_count,
+            output_folder=output_folder,
+        )
+
+    def _process_sequential(
+        self,
+        image_files: list[Path],
+        output_folder: Path,
+        total: int,
+    ) -> int:
+        """序列處理所有圖片"""
         success_count = 0
 
         for i, image_path in enumerate(image_files, 1):
@@ -107,12 +139,49 @@ class ImageProcessor:
                 sys.stdout.write("失敗\n")
                 sys.stdout.flush()
 
-        return ProcessResult(
-            total=total,
-            success=success_count,
-            failed=total - success_count,
-            output_folder=output_folder,
+        return success_count
+
+    def _process_parallel(
+        self,
+        image_files: list[Path],
+        output_folder: Path,
+        total: int,
+    ) -> int:
+        """並行處理所有圖片"""
+        success_count = 0
+        completed_count = 0
+
+        logger.info(
+            "Parallel processing: %d images with %d workers",
+            total,
+            self._max_workers,
         )
+
+        def _process_one(image_path: Path) -> tuple[str, bool]:
+            output_path = output_folder / f"{image_path.stem}.png"
+            result = self._backend.process(image_path, output_path)
+            return image_path.name, result
+
+        with ThreadPoolExecutor(max_workers=self._max_workers) as executor:
+            futures = {
+                executor.submit(_process_one, path): path for path in image_files
+            }
+
+            for future in as_completed(futures):
+                filename, result = future.result()
+                completed_count += 1
+
+                with self._progress_lock:
+                    self._progress_callback(completed_count, total, filename)
+                    if result:
+                        sys.stdout.write("完成\n")
+                        sys.stdout.flush()
+                        success_count += 1
+                    else:
+                        sys.stdout.write("失敗\n")
+                        sys.stdout.flush()
+
+        return success_count
 
     def process_single(self, input_path: Path, output_path: Path) -> bool:
         """
