@@ -113,7 +113,7 @@ class UltraBackend(BaseBackend):
             use_trimap_refine: 是否使用 trimap refinement（推薦開啟）
             use_portrait_matting: 是否啟用人像 matting 精修（針對頭髮/邊緣）
             portrait_matting_strength: 人像精修強度 (0.1-1.0)
-            portrait_matting_model: 人像精修模型（"enhanced" 或 "modnet"）
+            portrait_matting_model: 人像精修模型（"enhanced" 或 "birefnet"）
             alpha_config: Alpha 處理設定（邊緣去污染、輸出模式）
             resolution_config: 解析度設定（1024/1536/2048/adaptive）
             device: 計算設備（cuda/cpu），None 則自動選擇

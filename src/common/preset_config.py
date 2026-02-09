@@ -40,7 +40,7 @@ class BackgroundRemovalPreset(BaseModel):
     # Portrait matting（人像精修）
     use_portrait_matting: bool
     portrait_matting_strength: float = Field(ge=0.1, le=1.0)
-    portrait_matting_model: str = "enhanced"  # "enhanced" 或 "modnet"
+    portrait_matting_model: str = "enhanced"  # "enhanced" 或 "birefnet"
 
     # Alpha 處理
     edge_decontamination: bool
@@ -109,7 +109,7 @@ PRESET_ULTRA = BackgroundRemovalPreset(
     use_trimap_refine=True,
     use_portrait_matting=True,
     portrait_matting_strength=0.9,
-    portrait_matting_model="modnet",  # 使用專業模型
+    portrait_matting_model="birefnet",  # 使用 BiRefNet-matting 專業模型
     edge_decontamination=True,
     decontamination_strength=0.95,
 )

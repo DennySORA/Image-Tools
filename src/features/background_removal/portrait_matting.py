@@ -2,7 +2,12 @@
 人像 Matting 精修模組
 
 提供專門針對人像/頭髮的第二階段 Alpha Matting 精修
-支持 MODNet 等專業人像 matting 模型
+支持 BiRefNet-matting 和增強影像處理模式
+
+BiRefNet-matting 參考：
+- Hugging Face: https://huggingface.co/ZhengPeng7/BiRefNet-matting
+- GitHub: https://github.com/ZhengPeng7/BiRefNet
+- 授權：MIT License
 """
 
 import logging
@@ -11,9 +16,23 @@ from typing import Any
 import cv2
 import numpy as np
 import torch
+from PIL import Image
+from torchvision import transforms  # type: ignore[import-untyped]
 
 
 logger = logging.getLogger(__name__)
+
+# BiRefNet 模型配置
+BIREFNET_MODELS: dict[str, str] = {
+    "birefnet": "ZhengPeng7/BiRefNet-matting",
+    "birefnet-hr": "ZhengPeng7/BiRefNet_HR-matting",
+    "birefnet-portrait": "ZhengPeng7/BiRefNet-portrait",
+}
+BIREFNET_INPUT_SIZES: dict[str, tuple[int, int]] = {
+    "birefnet": (1024, 1024),
+    "birefnet-hr": (2048, 2048),
+    "birefnet-portrait": (1024, 1024),
+}
 
 # 常數定義
 EDGE_DETECTION_THRESHOLD = 0.1  # 邊緣檢測閾值
@@ -29,13 +48,19 @@ class PortraitMattingRefiner:
     """
     人像 Matting 精修器
 
-    使用 MODNet 或其他人像專用 matting 模型對邊緣進行精修
+    使用 BiRefNet-matting 或增強影像處理技術對邊緣進行精修
     特別適合處理頭髮、毛髮等複雜半透明邊界
+
+    支援模型：
+    - birefnet: BiRefNet-matting（通用 matting，1024x1024，MIT 授權）
+    - birefnet-hr: BiRefNet_HR-matting（高解析度 2048x2048）
+    - birefnet-portrait: BiRefNet-portrait（人像專用）
+    - enhanced: 增強影像處理（無需額外模型下載）
     """
 
     def __init__(
         self,
-        model_name: str = "modnet",
+        model_name: str = "birefnet",
         device: str | None = None,
         enable_hr_mode: bool = False,
     ):
@@ -43,12 +68,21 @@ class PortraitMattingRefiner:
         初始化人像 matting 精修器
 
         Args:
-            model_name: 模型名稱 ("modnet" 或 "enhanced")
-            device: 計算設備（cuda/cpu），None 則自動選擇
-            enable_hr_mode: 是否啟用高解析度模式（更慢但更精確）
+            model_name: 模型名稱 ("birefnet" / "birefnet-hr" /
+                       "birefnet-portrait" / "enhanced")
+            device: 計算設備（cuda/mps/cpu），None 則自動選擇
+            enable_hr_mode: 是否啟用高解析度模式（使用 birefnet-hr）
         """
+        # 向後相容：modnet → birefnet
+        if model_name == "modnet":
+            model_name = "birefnet"
+
         self.model_name = model_name
         self.enable_hr_mode = enable_hr_mode
+
+        # 高解析度模式自動切換到 birefnet-hr
+        if enable_hr_mode and model_name == "birefnet":
+            self.model_name = "birefnet-hr"
 
         # 設備配置（CUDA → MPS → CPU）
         if device is None:
@@ -63,6 +97,7 @@ class PortraitMattingRefiner:
 
         self._model: Any = None
         self._model_loaded = False
+        self._transform: transforms.Compose | None = None
 
         logger.info("Portrait matting refiner initialized")
         logger.info("  Model: %s", self.model_name)
@@ -74,8 +109,8 @@ class PortraitMattingRefiner:
         if self._model_loaded:
             return
 
-        if self.model_name == "modnet":
-            self._load_modnet()
+        if self.model_name in BIREFNET_MODELS:
+            self._load_birefnet()
         elif self.model_name == "enhanced":
             # Enhanced mode 使用進階影像處理技術，不需要額外模型
             logger.info("Enhanced portrait matting mode (no model needed)")
@@ -84,90 +119,59 @@ class PortraitMattingRefiner:
             msg = f"Unknown portrait matting model: {self.model_name}"
             raise ValueError(msg)
 
-    def _load_modnet(self) -> None:
+    def _load_birefnet(self) -> None:
         """
-        載入 MODNet 模型
+        載入 BiRefNet-matting 模型
 
-        使用 Hugging Face 或 PyTorch Hub 載入預訓練模型
+        使用 Hugging Face transformers 載入預訓練模型
         如果模型不可用，將回退到 enhanced 模式
 
-        MODNet 參考：
-        - Paper: https://arxiv.org/abs/2011.11961
-        - GitHub: https://github.com/ZHKKKe/MODNet
-        - Hugging Face: Xenova/modnet
+        BiRefNet 參考：
+        - GitHub: https://github.com/ZhengPeng7/BiRefNet
+        - Hugging Face: ZhengPeng7/BiRefNet-matting
+        - 授權：MIT License
         """
+        from transformers import AutoModelForImageSegmentation
+
+        repo_id = BIREFNET_MODELS[self.model_name]
+        input_size = BIREFNET_INPUT_SIZES[self.model_name]
+
         try:
-            logger.info("Loading MODNet model from Hugging Face...")
+            logger.info("Loading BiRefNet model: %s ...", repo_id)
 
-            # 方法 1: 嘗試從 Hugging Face 載入（推薦）
-            try:
-                from huggingface_hub import hf_hub_download
-
-                # 下載 MODNet 權重
-                model_path = hf_hub_download(
-                    repo_id="Xenova/modnet",
-                    filename="onnx/model.onnx",
-                    cache_dir=".cache/modnet",
-                )
-
-                logger.info("MODNet model downloaded: %s", model_path)
-
-                # 使用 ONNX Runtime 載入
-                try:
-                    import onnxruntime as ort
-
-                    session_options = ort.SessionOptions()
-                    session_options.graph_optimization_level = (
-                        ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-                    )
-
-                    providers = ["CPUExecutionProvider"]
-                    if self.device.type == "cuda":
-                        providers.insert(0, "CUDAExecutionProvider")
-
-                    self._model = ort.InferenceSession(
-                        model_path, session_options, providers=providers
-                    )
-                    self._model_loaded = True
-                    logger.info("MODNet loaded successfully (ONNX Runtime)")
-                    return
-
-                except ImportError:
-                    logger.warning("onnxruntime not installed. Trying PyTorch method.")
-
-            except Exception as e:
-                logger.warning("Failed to load from Hugging Face: %s", e)
-
-            # 方法 2: 嘗試從 PyTorch Hub 載入（備選）
-            try:
-                logger.info("Trying to load MODNet from PyTorch Hub...")
-
-                # 從 GitHub repo 載入
-                self._model = torch.hub.load(
-                    "ZHKKKe/MODNet",
-                    "modnet_photographic_portrait_matting",
-                    pretrained=True,
-                )
-                self._model.to(self.device)
-                self._model.eval()
-                self._model_loaded = True
-                logger.info("MODNet loaded successfully (PyTorch Hub)")
-                return
-
-            except Exception as e:
-                logger.warning("Failed to load from PyTorch Hub: %s", e)
-
-            # 如果都失敗，回退到 enhanced 模式
-            logger.warning(
-                "MODNet loading failed. Falling back to enhanced mode. "
-                "To use MODNet, install: pip install onnxruntime huggingface-hub"
+            self._model = AutoModelForImageSegmentation.from_pretrained(
+                repo_id, trust_remote_code=True
             )
-            self.model_name = "enhanced"
+            self._model.to(self.device)
+            self._model.eval()
+
+            # torch.compile() 加速（MPS 不支援）
+            if hasattr(torch, "compile") and self.device.type != "mps":
+                try:
+                    self._model = torch.compile(self._model, mode="reduce-overhead")
+                    logger.info("torch.compile() enabled for BiRefNet")
+                except Exception:
+                    logger.debug(
+                        "torch.compile() unavailable for BiRefNet",
+                        exc_info=True,
+                    )
+
+            # 建立預處理轉換器
+            self._transform = transforms.Compose(
+                [
+                    transforms.Resize(input_size),
+                    transforms.ToTensor(),
+                    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+                ]
+            )
+
             self._model_loaded = True
+            logger.info("BiRefNet loaded successfully (%s)", self.model_name)
 
         except Exception as e:
             logger.warning(
-                "MODNet loading error: %s. Falling back to enhanced mode.", e
+                "BiRefNet loading failed: %s. Falling back to enhanced mode.",
+                e,
             )
             self.model_name = "enhanced"
             self._model_loaded = True
@@ -191,18 +195,20 @@ class PortraitMattingRefiner:
         """
         self.load_model()
 
-        if self.model_name == "modnet":
-            return self._refine_with_modnet(image, initial_alpha, focus_strength)
+        if self.model_name in BIREFNET_MODELS:
+            return self._refine_with_birefnet(image, initial_alpha, focus_strength)
         return self._refine_enhanced(image, initial_alpha, focus_strength)
 
-    def _refine_with_modnet(
+    def _refine_with_birefnet(
         self,
         image: np.ndarray,
         initial_alpha: np.ndarray,
         focus_strength: float,
     ) -> np.ndarray:
         """
-        使用 MODNet 精修 alpha
+        使用 BiRefNet-matting 精修 alpha
+
+        BiRefNet 輸出高品質 alpha matte，特別擅長頭髮和半透明物件
 
         Args:
             image: RGB 圖片 (H, W, 3), uint8
@@ -212,93 +218,42 @@ class PortraitMattingRefiner:
         Returns:
             精修後的 alpha (H, W), uint8
         """
-        if self._model is None:
-            logger.warning("MODNet model not loaded, using initial alpha")
+        if self._model is None or self._transform is None:
+            logger.warning("BiRefNet model not loaded, using initial alpha")
             return initial_alpha
 
         try:
             h, w = image.shape[:2]
 
-            # MODNet 預處理
-            # 調整大小到 512 的倍數（MODNet 要求）
-            ref_size = 512
-            im_h, im_w = image.shape[:2]
-            if max(im_h, im_w) < ref_size or min(im_h, im_w) > ref_size:
-                if im_w >= im_h:
-                    im_rh = ref_size
-                    im_rw = int(im_w / im_h * ref_size)
-                else:
-                    im_rw = ref_size
-                    im_rh = int(im_h / im_w * ref_size)
-            else:
-                im_rh = im_h
-                im_rw = im_w
+            # 轉為 PIL Image 以使用 transforms
+            pil_image = Image.fromarray(image)
 
-            im_rw = im_rw - im_rw % 32
-            im_rh = im_rh - im_rh % 32
+            # 預處理並推論
+            input_tensor = self._transform(pil_image).unsqueeze(0).to(self.device)
 
-            # Resize 圖片
-            image_resized = cv2.resize(
-                image, (im_rw, im_rh), interpolation=cv2.INTER_AREA
-            )
+            with torch.no_grad():
+                preds = self._model(input_tensor)[-1].sigmoid().cpu()
 
-            # 檢查模型類型
-            if hasattr(self._model, "run"):  # ONNX Runtime
-                # 轉換為 ONNX 格式 (NCHW)
-                input_tensor = (
-                    image_resized.astype(np.float32).transpose(2, 0, 1) / 255.0
-                )
-                input_tensor = np.expand_dims(input_tensor, axis=0)
-
-                # 推論
-                input_name = self._model.get_inputs()[0].name
-                output_name = self._model.get_outputs()[0].name
-                matte = self._model.run([output_name], {input_name: input_tensor})[0]
-
-                # 轉回 numpy (squeeze batch + channel dimensions)
-                matte = matte[0, 0]
-
-            else:  # PyTorch 模型
-                from torchvision import transforms
-
-                # 轉換為 PyTorch tensor
-                transform = transforms.Compose(
-                    [
-                        transforms.ToTensor(),
-                        transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
-                    ]
-                )
-
-                input_tensor = transform(image_resized).unsqueeze(0).to(self.device)
-
-                # 推論
-                with torch.no_grad():
-                    _, _, matte = self._model(input_tensor, True)
-
-                # 轉回 numpy
-                matte = matte[0, 0].cpu().numpy()
-
-            # Resize 回原始大小
+            # 提取 alpha matte 並 resize 回原始大小
+            matte = preds[0].squeeze().numpy()
             matte_resized = cv2.resize(matte, (w, h), interpolation=cv2.INTER_LINEAR)
 
             # 轉換為 uint8
-            modnet_alpha = (matte_resized * 255).clip(0, 255).astype(np.uint8)
+            birefnet_alpha = (matte_resized * 255).clip(0, 255).astype(np.uint8)
 
-            # 根據強度混合初始 alpha 和 MODNet 結果
-            initial_alpha_normalized = initial_alpha.astype(np.float32) / 255.0
-            modnet_alpha_normalized = modnet_alpha.astype(np.float32) / 255.0
+            # 根據強度混合初始 alpha 和 BiRefNet 結果
+            initial_f = initial_alpha.astype(np.float32) / 255.0
+            birefnet_f = birefnet_alpha.astype(np.float32) / 255.0
 
-            # 混合：focus_strength 控制 MODNet 的影響力
-            blended = (
-                initial_alpha_normalized * (1 - focus_strength)
-                + modnet_alpha_normalized * focus_strength
+            blended = initial_f * (1 - focus_strength) + birefnet_f * focus_strength
+
+            logger.debug(
+                "BiRefNet refinement complete (strength: %.2f)", focus_strength
             )
-
-            logger.debug("MODNet refinement complete (strength: %.2f)", focus_strength)
             return (blended * 255).clip(0, 255).astype(np.uint8)
 
         except Exception as e:
-            logger.warning("MODNet refinement failed: %s. Using initial alpha.", e)
+            logger.warning("BiRefNet refinement failed: %s. Using initial alpha.", e)
             return initial_alpha
 
     def _refine_enhanced(
@@ -745,7 +700,8 @@ def refine_portrait_alpha(
     Args:
         image: RGB 圖片 (H, W, 3), uint8
         alpha: Alpha matte (H, W), uint8
-        model_name: 模型名稱 ("modnet" 或 "enhanced")
+        model_name: 模型名稱 ("birefnet" / "birefnet-hr" /
+                   "birefnet-portrait" / "enhanced")
         strength: 精修強度 (0.0-1.0)
         device: 計算設備
 
