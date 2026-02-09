@@ -140,7 +140,7 @@ class UltraBackend(BaseBackend):
 
         # 模型和轉換器
         self._model: Any = None
-        self._transform: transforms.Compose | None = None
+        self._transform_cache: dict[tuple[int, int], transforms.Compose] = {}
 
         # 人像 matting 精修器（延遲初始化）
         self._portrait_refiner: PortraitMattingRefiner | None = None
@@ -173,8 +173,16 @@ class UltraBackend(BaseBackend):
         self._model.to(self.device)
         self._model.eval()
 
-        # 注意：transform 現在在 _apply_rmbg_segmentation 中動態建立
-        # 以支持不同的解析度模式
+        # torch.compile() 加速（PyTorch 2.0+，MPS 不支援）
+        if hasattr(torch, "compile") and self.device.type != "mps":
+            try:
+                self._model = torch.compile(self._model, mode="reduce-overhead")
+                logger.info("torch.compile() enabled (mode: reduce-overhead)")
+            except Exception:
+                logger.warning(
+                    "torch.compile() failed, using eager mode",
+                    exc_info=True,
+                )
 
         logger.info("RMBG-2.0 model loaded successfully")
 
@@ -206,14 +214,17 @@ class UltraBackend(BaseBackend):
             self.resolution_config.mode.value,
         )
 
-        # 動態建立轉換器
-        transform = transforms.Compose(
-            [
-                transforms.Resize(inference_size),
-                transforms.ToTensor(),
-                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-            ]
-        )
+        # 取得或建立轉換器（快取以避免重複建立）
+        transform = self._transform_cache.get(inference_size)
+        if transform is None:
+            transform = transforms.Compose(
+                [
+                    transforms.Resize(inference_size),
+                    transforms.ToTensor(),
+                    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+                ]
+            )
+            self._transform_cache[inference_size] = transform
 
         # 轉換並推論
         input_tensor = transform(image).unsqueeze(0).to(self.device)
