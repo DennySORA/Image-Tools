@@ -6,15 +6,13 @@
 
 from pathlib import Path
 
-import pytest
-from src.core.models import (
+from src.data_model import (
     SUPPORTED_EXTENSIONS,
     ImageFile,
     ProcessConfig,
     ProcessResult,
     is_supported_image,
 )
-from src.core.processor import ImageProcessor
 
 
 class TestProcessConfig:
@@ -146,96 +144,3 @@ class TestImageSupport:
         dir_path = tmp_path / "directory.jpg"
         dir_path.mkdir()
         assert is_supported_image(dir_path) is False
-
-
-class TestImageProcessor:
-    """測試 ImageProcessor"""
-
-    def test_init(self) -> None:
-        """測試初始化"""
-        from src.backends.unified import UnifiedBackend
-
-        backend = UnifiedBackend()
-        processor = ImageProcessor(backend)
-
-        assert processor._backend == backend
-
-    @pytest.mark.integration
-    def test_scan_images(
-        self,
-        test_images_dir: Path,
-        simple_portrait_image: Path,
-        greenscreen_image: Path,
-    ) -> None:
-        """測試掃描圖片"""
-        from src.backends.unified import UnifiedBackend
-
-        # 確保測試圖片被創建（通過使用 fixtures）
-        assert simple_portrait_image.exists()
-        assert greenscreen_image.exists()
-
-        backend = UnifiedBackend()
-        processor = ImageProcessor(backend)
-
-        images = processor.scan_images(test_images_dir)
-
-        # 至少應該找到我們創建的測試圖片
-        assert len(images) > 0
-
-        # 所有圖片都應該是支援的格式
-        for img_path in images:
-            assert is_supported_image(img_path)
-
-    @pytest.mark.integration
-    @pytest.mark.slow
-    def test_process_folder_empty(self, tmp_path: Path) -> None:
-        """測試處理空資料夾"""
-        from src.backends.unified import UnifiedBackend
-
-        empty_folder = tmp_path / "empty"
-        empty_folder.mkdir()
-
-        config = ProcessConfig(
-            input_folder=empty_folder,
-            backend_name="unified",
-            model="auto",
-            strength=0.7,
-        )
-
-        backend = UnifiedBackend()
-        processor = ImageProcessor(backend)
-
-        result = processor.process_folder(config)
-
-        assert result.total == 0
-        assert result.success == 0
-        assert result.failed == 0
-
-    @pytest.mark.integration
-    @pytest.mark.slow
-    def test_process_folder_with_images(
-        self, test_images_dir: Path, temp_output_dir: Path
-    ) -> None:
-        """測試處理包含圖片的資料夾"""
-        from src.backends.unified import UnifiedBackend
-
-        config = ProcessConfig(
-            input_folder=test_images_dir,
-            backend_name="unified",
-            model="auto",
-            strength=0.7,
-            output_folder=temp_output_dir,
-        )
-
-        try:
-            backend = UnifiedBackend(strength=config.strength)
-            backend.load_model()
-            processor = ImageProcessor(backend)
-
-            result = processor.process_folder(config)
-
-            # 應該有處理一些圖片
-            assert result.total > 0
-            assert result.output_folder == temp_output_dir
-        except Exception as e:
-            pytest.skip(f"Process folder test skipped: {e}")

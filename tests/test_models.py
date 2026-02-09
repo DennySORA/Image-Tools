@@ -4,7 +4,7 @@
 
 from pathlib import Path
 
-from src.core.models import ProcessConfig, is_supported_image
+from src.data_model import ProcessConfig, is_supported_image
 
 
 def test_process_config_default_output(tmp_path: Path) -> None:

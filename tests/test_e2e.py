@@ -14,8 +14,7 @@ import numpy as np
 import pytest
 from PIL import Image
 from src.backends.ultra import ColorFilter, ColorFilterConfig, UltraBackend
-from src.backends.unified import UnifiedBackend
-from src.core.models import ProcessConfig
+from src.data_model import ProcessConfig
 from src.core.processor import ImageProcessor
 
 
@@ -280,53 +279,6 @@ class TestProcessorIntegrationE2E:
             assert result.output_folder == temp_output_dir
         except Exception as e:
             pytest.skip(f"Processor integration test skipped: {e}")
-
-
-class TestUnifiedVsUltraE2E:
-    """測試 Unified 與 Ultra Backend 比較"""
-
-    @pytest.mark.e2e
-    @pytest.mark.slow
-    @pytest.mark.comparison
-    def test_unified_vs_ultra_quality(
-        self, complex_edges_image: Path, temp_output_dir: Path
-    ) -> None:
-        """比較 Unified 和 Ultra 的品質差異"""
-        unified_output = temp_output_dir / "unified_output.png"
-        ultra_output = temp_output_dir / "ultra_output.png"
-
-        try:
-            # Unified Backend
-            unified_backend = UnifiedBackend(strength=0.7)
-            unified_backend.load_model()
-            unified_success = unified_backend.process(
-                complex_edges_image, unified_output
-            )
-
-            # Ultra Backend
-            ultra_backend = UltraBackend(strength=0.7, use_trimap_refine=True)
-            ultra_backend.load_model()
-            ultra_success = ultra_backend.process(complex_edges_image, ultra_output)
-
-            assert unified_success is True
-            assert ultra_success is True
-
-            # 比較結果（Ultra 應該有更多半透明像素，因為 trimap refinement）
-            unified_img = Image.open(unified_output)
-            ultra_img = Image.open(ultra_output)
-
-            unified_alpha = np.array(unified_img)[:, :, 3]
-            ultra_alpha = np.array(ultra_img)[:, :, 3]
-
-            # Ultra 應該有更多半透明區域（更平滑的邊緣）
-            unified_semi = ((unified_alpha > 50) & (unified_alpha < 200)).sum()
-            ultra_semi = ((ultra_alpha > 50) & (ultra_alpha < 200)).sum()
-
-            # Ultra 的半透明像素通常更多（因為 guided filter）
-            # 但這不是絕對的，取決於圖片
-            assert ultra_semi > 0  # 至少有半透明像素
-        except Exception as e:
-            pytest.skip(f"Comparison test skipped: {e}")
 
 
 class TestErrorRecoveryE2E:
