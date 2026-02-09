@@ -6,9 +6,7 @@
 """
 
 import logging
-import sys
 import threading
-from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -20,6 +18,7 @@ from src.data_model import (
 )
 
 from .interfaces import BackendProtocol
+from .progress import RichProgressBar
 
 
 logger = logging.getLogger(__name__)
@@ -30,13 +29,12 @@ class ImageProcessor:
     圖片處理器
 
     負責批次處理資料夾中的圖片，遵循單一職責原則
-    支援序列和並行處理模式
+    支援序列和並行處理模式，使用 rich 進度條顯示處理進度
     """
 
     def __init__(
         self,
         backend: BackendProtocol,
-        progress_callback: Callable[[int, int, str], None] | None = None,
         max_workers: int = 1,
     ):
         """
@@ -44,19 +42,11 @@ class ImageProcessor:
 
         Args:
             backend: 背景移除後端
-            progress_callback: 進度回調函數 (current, total, filename)
             max_workers: 並行工作執行緒數（1=序列處理，>1=並行處理）
         """
         self._backend = backend
-        self._progress_callback = progress_callback or self._default_progress
         self._max_workers = max(1, max_workers)
         self._progress_lock = threading.Lock()
-
-    @staticmethod
-    def _default_progress(current: int, total: int, filename: str) -> None:
-        """預設進度顯示"""
-        sys.stdout.write(f"[{current}/{total}] {filename} ... ")
-        sys.stdout.flush()
 
     def scan_images(self, folder: Path) -> list[Path]:
         """
@@ -124,22 +114,13 @@ class ImageProcessor:
         total: int,
     ) -> int:
         """序列處理所有圖片"""
-        success_count = 0
+        with RichProgressBar(total=total) as bar:
+            for image_path in image_files:
+                output_path = output_folder / f"{image_path.stem}.png"
+                success = self._backend.process(image_path, output_path)
+                bar.update(image_path.name, success=success)
 
-        for i, image_path in enumerate(image_files, 1):
-            output_path = output_folder / f"{image_path.stem}.png"
-
-            self._progress_callback(i, total, image_path.name)
-
-            if self._backend.process(image_path, output_path):
-                sys.stdout.write("完成\n")
-                sys.stdout.flush()
-                success_count += 1
-            else:
-                sys.stdout.write("失敗\n")
-                sys.stdout.flush()
-
-        return success_count
+            return bar.success_count
 
     def _process_parallel(
         self,
@@ -148,9 +129,6 @@ class ImageProcessor:
         total: int,
     ) -> int:
         """並行處理所有圖片"""
-        success_count = 0
-        completed_count = 0
-
         logger.info(
             "Parallel processing: %d images with %d workers",
             total,
@@ -162,26 +140,18 @@ class ImageProcessor:
             result = self._backend.process(image_path, output_path)
             return image_path.name, result
 
-        with ThreadPoolExecutor(max_workers=self._max_workers) as executor:
-            futures = {
-                executor.submit(_process_one, path): path for path in image_files
-            }
+        with RichProgressBar(total=total) as bar:
+            with ThreadPoolExecutor(max_workers=self._max_workers) as executor:
+                futures = {
+                    executor.submit(_process_one, path): path for path in image_files
+                }
 
-            for future in as_completed(futures):
-                filename, result = future.result()
-                completed_count += 1
+                for future in as_completed(futures):
+                    filename, result = future.result()
+                    with self._progress_lock:
+                        bar.update(filename, success=result)
 
-                with self._progress_lock:
-                    self._progress_callback(completed_count, total, filename)
-                    if result:
-                        sys.stdout.write("完成\n")
-                        sys.stdout.flush()
-                        success_count += 1
-                    else:
-                        sys.stdout.write("失敗\n")
-                        sys.stdout.flush()
-
-        return success_count
+            return bar.success_count
 
     def process_single(self, input_path: Path, output_path: Path) -> bool:
         """

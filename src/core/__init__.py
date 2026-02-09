@@ -6,6 +6,7 @@ from src.data_model import BackendInfo, ModelInfo, ProcessConfig, ProcessResult
 
 from .interfaces import BackendProtocol
 from .processor import ImageProcessor
+from .progress import RichProgressBar
 
 
 __all__ = [
@@ -15,4 +16,5 @@ __all__ = [
     "BackendInfo",
     "ModelInfo",
     "ImageProcessor",
+    "RichProgressBar",
 ]
