@@ -54,7 +54,7 @@ class TestPresetDefinitions:
         assert preset.use_trimap_refine is True
         assert preset.use_portrait_matting is True
         assert preset.portrait_matting_strength == 0.9
-        assert preset.portrait_matting_model == "modnet"
+        assert preset.portrait_matting_model == "birefnet"
         assert preset.edge_decontamination is True
         assert preset.decontamination_strength == 0.95
 
@@ -164,7 +164,7 @@ class TestUltraBackendFromPreset:
         assert backend.strength == 0.95
         assert backend.resolution_config.mode == ResolutionMode.FIXED_2048
         assert backend.use_portrait_matting is True
-        assert backend.portrait_matting_model == "modnet"
+        assert backend.portrait_matting_model == "birefnet"
         assert backend.portrait_matting_strength == 0.9
 
     def test_create_with_preset_level_enum(self) -> None:
@@ -261,7 +261,7 @@ class TestPresetFeatureEnablement:
 
         # 但模型不同
         assert high.portrait_matting_model == "enhanced"
-        assert ultra.portrait_matting_model == "modnet"
+        assert ultra.portrait_matting_model == "birefnet"
 
 
 class TestPresetColorFilter:

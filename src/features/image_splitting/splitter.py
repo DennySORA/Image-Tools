@@ -1,55 +1,38 @@
-# TODO: Refactor - This file is 585 lines (exceeds 500-line hard cap)
-# Consider splitting into: detector.py (object detection), optimizer.py (threshold optimization), core.py (main logic)
-
 """
-圖片分割工具模組
+圖片分割工具核心模組
 
 使用 Alpha 通道連通分量檢測來分割透明圖片中的多個物件
+
+已重構為三個模組：
+- detector.py: 物件偵測邏輯
+- optimizer.py: 閾值優化
+- splitter.py: 主要分割流程（本檔案）
 """
 
 import logging
-from array import array
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
 
 from PIL import Image
 
-from .geometry import BBox
-from .union_find import UnionFind, UnionFindDynamic
+from .detector import DetectedObject, detect_components_from_alpha, merge_objects
+from .optimizer import (
+    AUTO_ALPHA_THRESHOLDS,
+    score_candidate,
+    should_search_threshold,
+    single_object_looks_merged,
+)
 
 
 logger = logging.getLogger(__name__)
 
-
 # 常數定義
-ALPHA_MAX: Final[int] = 255
-AUTO_ALPHA_THRESHOLDS: Final[tuple[int, ...]] = (1, 2, 4, 8, 16, 32, 64)
-MIN_OBJECTS_FOR_OUTLIER_CHECK: Final[int] = 2
-OUTLIER_RATIO_MERGED_THRESHOLD: Final[float] = 1.6
-SINGLE_OBJECT_BBOX_AREA_RATIO_THRESHOLD: Final[float] = 0.30
-SINGLE_OBJECT_FILL_RATIO_THRESHOLD: Final[float] = 0.70
-MIN_STABLE_RUN_LEN: Final[int] = 2
-UNSTABLE_SPLIT_PENALTY: Final[float] = 40.0
+ALPHA_MAX = 255
 
 
 class SplitImgError(Exception):
     """圖片分割錯誤"""
-
-
-@dataclass(frozen=True, slots=True)
-class DetectedObject:
-    """
-    檢測到的物件
-
-    Attributes:
-        bbox: 邊界框
-        area_px: 像素面積
-    """
-
-    bbox: BBox
-    area_px: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,12 +115,10 @@ class ImageSplitter:
 
         if self.config.smart_threshold:
             detection = self._detect_objects_smart(image)
-            # Cast to proper types (dict values can be int | list but keys determine actual type)
             detected_objects = detection["objects"]  # type: ignore[assignment]
             threshold_value = detection["alpha_threshold"]  # type: ignore[assignment]
         else:
             objects_result = self._detect_objects(image, self.config.alpha_threshold)
-            # Handle case where _detect_objects returns an error code (int)
             detected_objects = [] if isinstance(objects_result, int) else objects_result
             threshold_value = self.config.alpha_threshold
 
@@ -190,6 +171,8 @@ class ImageSplitter:
 
         return result.object_count
 
+    # === 偵測邏輯（委派給 detector 模組） ===
+
     def _detect_objects(
         self, image: Image.Image, alpha_threshold: int
     ) -> list[DetectedObject]:
@@ -202,7 +185,7 @@ class ImageSplitter:
             raise SplitImgError("Alpha 閾值必須在 [0, 255] 範圍內")
 
         alpha = image.getchannel("A").tobytes()
-        objects = self._detect_components_from_alpha(
+        objects = detect_components_from_alpha(
             alpha, width=w, height=h, alpha_threshold=alpha_threshold
         )
 
@@ -217,7 +200,7 @@ class ImageSplitter:
 
         # 合併相近物件
         if self.config.merge_pad_px > 0 and len(objects) > 1:
-            objects = self._merge_objects(
+            objects = merge_objects(
                 objects,
                 merge_pad_px=self.config.merge_pad_px,
                 max_width=w,
@@ -228,18 +211,20 @@ class ImageSplitter:
         objects.sort(key=lambda o: (o.bbox.top, o.bbox.left))
         return objects
 
+    # === 智能閾值（委派給 optimizer 模組） ===
+
     def _detect_objects_smart(
         self, image: Image.Image
     ) -> dict[str, int | list[DetectedObject]]:
         """智能檢測物件 (自動選擇最佳 Alpha 閾值)"""
         base_objects = self._detect_objects(image, self.config.alpha_threshold)
 
-        # 檢查是否需要搜尋更好的閾值
-        should_search = self._should_search_threshold(
+        w, h = image.size
+        need_search = should_search_threshold(
             base_objects
-        ) or self._single_object_looks_merged(image, base_objects)
+        ) or single_object_looks_merged(w, h, base_objects)
 
-        if not should_search:
+        if not need_search:
             return {
                 "objects": base_objects,
                 "alpha_threshold": self.config.alpha_threshold,
@@ -248,12 +233,12 @@ class ImageSplitter:
         # 嘗試不同的閾值
         best_threshold = self.config.alpha_threshold
         best_objects = base_objects
-        best_score = self._score_candidate(best_threshold, best_objects, run_len=1)
+        best_score = score_candidate(best_threshold, best_objects, run_len=1)
 
         for threshold in AUTO_ALPHA_THRESHOLDS:
             try:
                 objects = self._detect_objects(image, threshold)
-                score = self._score_candidate(threshold, objects, run_len=1)
+                score = score_candidate(threshold, objects, run_len=1)
                 if score > best_score:
                     best_threshold = threshold
                     best_objects = objects
@@ -263,146 +248,7 @@ class ImageSplitter:
 
         return {"objects": best_objects, "alpha_threshold": best_threshold}
 
-    def _detect_components_from_alpha(
-        self, alpha: bytes, *, width: int, height: int, alpha_threshold: int
-    ) -> list[DetectedObject]:
-        """從 Alpha 通道檢測連通分量"""
-        labels, uf, w2 = self._label_alpha_to_buffer(
-            alpha, width=width, height=height, alpha_threshold=alpha_threshold
-        )
-        return self._objects_from_labeled_buffer(
-            labels, uf, width=width, height=height, width2=w2
-        )
-
-    def _label_alpha_to_buffer(
-        self, alpha: bytes, *, width: int, height: int, alpha_threshold: int
-    ) -> tuple[array[int], UnionFindDynamic, int]:
-        """將 Alpha 通道標記到緩衝區 (8-連通標記)"""
-        w: Final[int] = width
-        h: Final[int] = height
-        w2: Final[int] = w + 2  # 加 1 像素邊框避免邊界檢查
-        h2: Final[int] = h + 2
-
-        labels: array[int] = array("I", [0]) * (w2 * h2)
-        uf = UnionFindDynamic()
-
-        mv = memoryview(alpha)
-        thr: Final[int] = alpha_threshold
-
-        for y in range(h):
-            alpha_row = y * w
-            label_row = (y + 1) * w2 + 1
-
-            for x in range(w):
-                if mv[alpha_row + x] <= thr:
-                    continue
-
-                idx = label_row + x
-
-                # 檢查 8 個鄰居 (上、左上、左、右上)
-                neighbors = (
-                    labels[idx - 1],  # 左
-                    labels[idx - w2],  # 上
-                    labels[idx - w2 - 1],  # 左上
-                    labels[idx - w2 + 1],  # 右上
-                )
-
-                base = self._min_nonzero(*neighbors)
-                if base == 0:
-                    # 新分量
-                    labels[idx] = uf.make_set()
-                    continue
-
-                labels[idx] = base
-                self._union_neighbors(uf, base, neighbors)
-
-        return labels, uf, w2
-
-    def _objects_from_labeled_buffer(
-        self,
-        labels: array[int],
-        uf: UnionFindDynamic,
-        *,
-        width: int,
-        height: int,
-        width2: int,
-    ) -> list[DetectedObject]:
-        """從標記緩衝區提取物件"""
-        stats: dict[int, tuple[int, int, int, int, int]] = {}
-        # tuple = (left, top, right_excl, bottom_excl, area)
-
-        for y in range(height):
-            label_row = (y + 1) * width2 + 1
-            for x in range(width):
-                idx = label_row + x
-                lab = labels[idx]
-                if lab == 0:
-                    continue
-
-                root = uf.find(lab)
-                labels[idx] = root
-
-                entry = stats.get(root)
-                if entry is None:
-                    stats[root] = (x, y, x + 1, y + 1, 1)
-                    continue
-
-                left, top, right, bottom, area = entry
-                stats[root] = (
-                    min(left, x),
-                    min(top, y),
-                    max(right, x + 1),
-                    max(bottom, y + 1),
-                    area + 1,
-                )
-
-        return [
-            DetectedObject(
-                bbox=BBox(left=left, top=top, right=right, bottom=bottom),
-                area_px=area,
-            )
-            for left, top, right, bottom, area in stats.values()
-        ]
-
-    def _merge_objects(
-        self,
-        objects: list[DetectedObject],
-        *,
-        merge_pad_px: int,
-        max_width: int,
-        max_height: int,
-    ) -> list[DetectedObject]:
-        """合併相近的物件"""
-        expanded: list[BBox] = [
-            obj.bbox.expand(merge_pad_px, max_width=max_width, max_height=max_height)
-            for obj in objects
-        ]
-        uf = UnionFind(len(objects))
-
-        # 檢查重疊
-        for i in range(len(objects)):
-            bi = expanded[i]
-            for j in range(i + 1, len(objects)):
-                if bi.overlaps(expanded[j]):
-                    uf.union(i, j)
-
-        # 分組
-        groups: dict[int, list[int]] = {}
-        for i in range(len(objects)):
-            root = uf.find(i)
-            groups.setdefault(root, []).append(i)
-
-        # 合併
-        merged: list[DetectedObject] = []
-        for idxs in groups.values():
-            bbox = objects[idxs[0]].bbox
-            area = 0
-            for i in idxs:
-                bbox = bbox.union(objects[i].bbox)
-                area += objects[i].area_px
-            merged.append(DetectedObject(bbox=bbox, area_px=area))
-
-        return merged
+    # === 分割與裁切 ===
 
     def _split_and_center(
         self, image: Image.Image, objects: Iterable[DetectedObject]
@@ -482,107 +328,3 @@ class ImageSplitter:
             out.append(canvas)
 
         return out
-
-    # 輔助方法
-    @staticmethod
-    def _min_nonzero(*values: int) -> int:
-        """取最小非零值"""
-        base = 0
-        for v in values:
-            if v and (base == 0 or v < base):
-                base = v
-        return base
-
-    @staticmethod
-    def _union_neighbors(
-        uf: UnionFindDynamic, base: int, neighbors: tuple[int, int, int, int]
-    ) -> None:
-        """合併鄰居"""
-        for n in neighbors:
-            if n and n != base:
-                uf.union(base, n)
-
-    @staticmethod
-    def _median_int(values: list[int]) -> int:
-        """計算中位數"""
-        if not values:
-            return 0
-        values = sorted(values)
-        return values[len(values) // 2]
-
-    def _outlier_ratio(self, objects: list[DetectedObject]) -> float:
-        """計算離群值比例"""
-        if len(objects) < MIN_OBJECTS_FOR_OUTLIER_CHECK:
-            return 1.0
-
-        widths = [o.bbox.width() for o in objects]
-        heights = [o.bbox.height() for o in objects]
-        bbox_areas = [o.bbox.area() for o in objects]
-
-        mw = max(1, self._median_int(widths))
-        mh = max(1, self._median_int(heights))
-        ma = max(1, self._median_int(bbox_areas))
-
-        ratios = []
-        for w, h, a in zip(widths, heights, bbox_areas, strict=True):
-            ratios.append(w / mw)
-            ratios.append(h / mh)
-            ratios.append(a / ma)
-
-        return max(ratios, default=1.0)
-
-    def _should_search_threshold(self, objects: list[DetectedObject]) -> bool:
-        """是否應該搜尋更好的閾值"""
-        if len(objects) < MIN_OBJECTS_FOR_OUTLIER_CHECK:
-            return False
-        return self._outlier_ratio(objects) >= OUTLIER_RATIO_MERGED_THRESHOLD
-
-    def _single_object_looks_merged(
-        self, image: Image.Image, objects: list[DetectedObject]
-    ) -> bool:
-        """單個物件是否看起來像合併的"""
-        if len(objects) != 1:
-            return False
-        w, h = image.size
-        image_area = max(1, w * h)
-        bbox_area = max(1, objects[0].bbox.area())
-        bbox_ratio = bbox_area / image_area
-        fill_ratio = objects[0].area_px / bbox_area
-        return (
-            bbox_ratio >= SINGLE_OBJECT_BBOX_AREA_RATIO_THRESHOLD
-            and fill_ratio <= SINGLE_OBJECT_FILL_RATIO_THRESHOLD
-        )
-
-    def _score_candidate(
-        self, threshold: int, objects: list[DetectedObject], run_len: int
-    ) -> float:
-        """評分候選結果"""
-        n = len(objects)
-        if n <= 0:
-            return float("-inf")
-
-        outliers = self._outlier_ratio(objects)
-        small_cnt = self._small_area_count(objects)
-        unstable_penalty = (
-            UNSTABLE_SPLIT_PENALTY
-            if n >= MIN_OBJECTS_FOR_OUTLIER_CHECK and run_len < MIN_STABLE_RUN_LEN
-            else 0.0
-        )
-
-        return (
-            (n * 100.0)
-            + (run_len * 5.0)
-            - (outliers * 30.0)
-            - (small_cnt * 20.0)
-            - unstable_penalty
-            - (threshold * 0.1)
-        )
-
-    def _small_area_count(self, objects: list[DetectedObject]) -> int:
-        """計算小面積物件數量"""
-        if not objects:
-            return 0
-        areas = [o.area_px for o in objects]
-        med = max(1, self._median_int(areas))
-        cutoff = med * 0.25
-        return sum(1 for a in areas if a < cutoff)

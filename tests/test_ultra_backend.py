@@ -68,7 +68,7 @@ class TestUltraBackendInit:
 
         # Auto (應該選擇可用的設備)
         backend_auto = UltraBackend(device=None)
-        assert backend_auto.device.type in ("cuda", "cpu")
+        assert backend_auto.device.type in ("cuda", "mps", "cpu")
 
 
 class TestUltraBackendModelLoading:

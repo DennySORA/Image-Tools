@@ -56,14 +56,16 @@ class TestPortraitMattingRefiner:
         refiner = PortraitMattingRefiner(model_name="enhanced", device="cpu")
 
         # 建立測試圖片
+        image = np.zeros((100, 100, 3), dtype=np.uint8)
+        image[40:60, 40:60] = 200  # 中央方塊
         gray = np.zeros((100, 100), dtype=np.uint8)
-        gray[40:60, 40:60] = 200  # 中央方塊
+        gray[40:60, 40:60] = 200
 
         alpha = np.zeros((100, 100), dtype=np.float32)
         alpha[40:60, 40:60] = 1.0
 
         # 檢測邊緣
-        edges = refiner._detect_portrait_edges(gray, alpha)
+        edges, _skin = refiner._detect_portrait_edges(image, gray, alpha)
 
         # 應該在邊界附近檢測到邊緣
         assert edges.dtype == bool
@@ -163,12 +165,16 @@ class TestPortraitMattingWithSyntheticImages:
         gray = np.mean(image, axis=2).astype(np.uint8)
         alpha_float = alpha.astype(np.float32) / 255.0
 
-        # 建立假的邊緣遮罩
+        # 建立假的邊緣和肤色遮罩
         edges = np.zeros((256, 256), dtype=bool)
         edges[60:196, 80:176] = True
+        skin_mask = np.zeros((256, 256), dtype=bool)
+        skin_mask[100:150, 110:150] = True
 
         # 應該能執行不報錯
-        enhanced = refiner._enhance_hair_details(gray, alpha_float, edges, strength=0.7)
+        enhanced = refiner._enhance_hair_details(
+            image, gray, alpha_float, edges, skin_mask, strength=0.7
+        )
 
         assert enhanced.shape == alpha_float.shape
         assert enhanced.dtype == np.float32
