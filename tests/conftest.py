@@ -4,10 +4,66 @@ Pytest 配置和共用 fixtures
 
 import shutil
 from pathlib import Path
+from typing import ClassVar
 
 import numpy as np
 import pytest
 from PIL import Image, ImageDraw
+from src.core.interfaces import BaseBackend
+
+
+class MockBackend(BaseBackend):
+    """
+    測試用 MockBackend
+
+    繼承 BaseBackend，模擬真實後端行為：
+    - load_model() 設置 _model_loaded 並計數
+    - process() 讀取圖片 → 轉換 RGBA → 儲存 PNG → 回傳 True
+    - fail_files: 指定會回傳 False 的檔名集合
+    - processed_files: 追蹤所有處理過的檔案
+    """
+
+    name: ClassVar[str] = "mock"
+    description: ClassVar[str] = "Mock backend for testing"
+
+    def __init__(
+        self,
+        strength: float = 0.5,
+        fail_files: set[str] | None = None,
+    ) -> None:
+        super().__init__(strength=strength)
+        self.fail_files: set[str] = fail_files or set()
+        self.load_model_calls: int = 0
+        self.process_calls: int = 0
+        self.processed_files: list[str] = []
+
+    def load_model(self) -> None:
+        self._model_loaded = True
+        self.load_model_calls += 1
+
+    def process(self, input_path: Path, output_path: Path) -> bool:
+        self.process_calls += 1
+        self.processed_files.append(input_path.name)
+
+        if input_path.name in self.fail_files:
+            return False
+
+        try:
+            img = Image.open(input_path)
+            img_rgba = img.convert("RGBA")
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            img_rgba.save(output_path, "PNG")
+            return True
+        except Exception:
+            return False
+
+    @classmethod
+    def get_available_models(cls) -> list[str]:
+        return ["mock-v1"]
+
+    @classmethod
+    def get_model_description(cls) -> str:
+        return "Mock model for testing"
 
 
 @pytest.fixture(scope="session")
@@ -266,3 +322,62 @@ def cleanup_output(temp_output_dir: Path) -> None:
     yield
     if temp_output_dir.exists():
         shutil.rmtree(temp_output_dir)
+
+
+# ── MockBackend fixtures ──
+
+
+@pytest.fixture
+def mock_backend() -> MockBackend:
+    """基本 MockBackend 實例"""
+    return MockBackend()
+
+
+@pytest.fixture
+def mock_backend_with_failures() -> MockBackend:
+    """帶有失敗檔案的 MockBackend"""
+    return MockBackend(fail_files={"fail_image.png", "corrupted.png"})
+
+
+def _create_color_image(path: Path, color: tuple[int, int, int]) -> None:
+    """建立 64×64 純色 PNG 測試圖片"""
+    img = Image.new("RGB", (64, 64), color=color)
+    img.save(path, "PNG")
+
+
+@pytest.fixture
+def valid_test_images_dir(tmp_path: Path) -> Path:
+    """5 張 64×64 純色 PNG：red, green, blue, white, black"""
+    images_dir = tmp_path / "images"
+    images_dir.mkdir()
+    colors = {
+        "red": (255, 0, 0),
+        "green": (0, 255, 0),
+        "blue": (0, 0, 255),
+        "white": (255, 255, 255),
+        "black": (0, 0, 0),
+    }
+    for name, color in colors.items():
+        _create_color_image(images_dir / f"{name}.png", color)
+    return images_dir
+
+
+@pytest.fixture
+def mixed_test_images_dir(tmp_path: Path) -> Path:
+    """5 張有效 PNG + readme.txt + corrupted.png（無效位元組）"""
+    images_dir = tmp_path / "images"
+    images_dir.mkdir()
+    colors = {
+        "red": (255, 0, 0),
+        "green": (0, 255, 0),
+        "blue": (0, 0, 255),
+        "white": (255, 255, 255),
+        "black": (0, 0, 0),
+    }
+    for name, color in colors.items():
+        _create_color_image(images_dir / f"{name}.png", color)
+    # 非圖片檔案
+    (images_dir / "readme.txt").write_text("not an image")
+    # 損壞的 PNG（隨機位元組）
+    (images_dir / "corrupted.png").write_bytes(b"\x00\x01\x02\x03\x04\x05")
+    return images_dir

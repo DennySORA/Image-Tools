@@ -96,6 +96,7 @@ max-complexity = 10
 "test_with_synthetic_images.py" = ["T201", "S101", "TRY300", "PLR2004"]  # Allow print, assert, and style suggestions in test script
 "src/features/background_removal/portrait_matting.py" = ["PLC0415", "TRY300"]  # Allow dynamic imports for optional dependencies
 "src/features/background_removal/ultra.py" = ["PLC0415"]  # Allow local imports in classmethod
+"tests/*.py" = ["S101", "PLR2004", "PLC0415", "SIM117", "TRY300"]  # Allow assert, magic values, local imports, nested with, and try-return in tests
 
 # ---------------- mypy ----------------
 
