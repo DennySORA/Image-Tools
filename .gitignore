@@ -11,6 +11,7 @@ wheels/
 
 # User-local history
 .rembg_history.json
+.ultra_settings.json
 
 # Test files and directories
 test_images/
