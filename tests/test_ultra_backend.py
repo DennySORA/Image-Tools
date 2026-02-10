@@ -206,7 +206,7 @@ class TestColorFilter:
         np.testing.assert_array_equal(result_alpha, alpha)
 
     def test_green_color_filter(self) -> None:
-        """測試綠色過濾"""
+        """測試綠色過濾（RGB despill，不修改 alpha）"""
         color_filter = ColorFilterConfig(enabled=True, color=ColorFilter.GREEN)
         backend = UltraBackend(color_filter=color_filter)
 
@@ -214,15 +214,18 @@ class TestColorFilter:
         image = np.zeros((100, 100, 3), dtype=np.uint8)
         image[:50, :, :] = [0, 177, 64]  # 上半部綠色（綠幕色）
         image[50:, :, :] = [255, 100, 100]  # 下半部紅色（前景）
+        original_green_top = image[:50, :, 1].copy()
 
         alpha = np.full((100, 100), 200, dtype=np.uint8)
 
         result_alpha = backend._apply_color_filter(image, alpha)
 
-        # 綠色區域的 alpha 應該被降低
-        assert np.mean(result_alpha[:50, :]) < np.mean(alpha[:50, :])
-        # 前景區域應該保持
-        assert np.mean(result_alpha[50:, :]) >= np.mean(alpha[50:, :]) * 0.9
+        # 綠色模式不修改 alpha（避免過度移除）
+        assert np.array_equal(result_alpha, alpha)
+        # 綠色區域的 G 通道應該被降低（despill）
+        assert np.mean(image[:50, :, 1]) < np.mean(original_green_top)
+        # 紅色前景的 G 通道不受影響（alpha=200 接近不透明）
+        assert image[50, 50, 1] == 100  # noqa: PLR2004
 
     def test_white_color_filter(self) -> None:
         """測試白色過濾"""

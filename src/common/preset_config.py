@@ -12,7 +12,7 @@ from enum import StrEnum
 from pydantic import BaseModel, Field
 
 from src.common.alpha_config import AlphaConfig, ResolutionConfig, ResolutionMode
-from src.common.color_filter import ColorFilterConfig
+from src.common.color_filter import ColorFilter, ColorFilterConfig
 
 
 class PresetLevel(StrEnum):
@@ -21,6 +21,7 @@ class PresetLevel(StrEnum):
     BALANCED = "balanced"  # 中等：平衡速度與品質
     HIGH = "high"  # 高：高品質處理
     ULTRA = "ultra"  # 最強：全部參數拉滿
+    GREEN_SCREEN = "green_screen"  # 綠幕：針對綠色背景優化
 
 
 class BackgroundRemovalPreset(BaseModel):
@@ -36,11 +37,6 @@ class BackgroundRemovalPreset(BaseModel):
 
     # Trimap refinement
     use_trimap_refine: bool
-
-    # Portrait matting（人像精修）
-    use_portrait_matting: bool
-    portrait_matting_strength: float = Field(ge=0.1, le=1.0)
-    portrait_matting_model: str = "enhanced"  # "enhanced" 或 "birefnet"
 
     # Alpha 處理
     edge_decontamination: bool
@@ -85,9 +81,6 @@ PRESET_BALANCED = BackgroundRemovalPreset(
     strength=0.6,
     resolution_mode=ResolutionMode.FIXED_1024,
     use_trimap_refine=True,
-    use_portrait_matting=False,
-    portrait_matting_strength=0.5,
-    portrait_matting_model="enhanced",
     edge_decontamination=True,
     decontamination_strength=0.6,
 )
@@ -96,9 +89,6 @@ PRESET_HIGH = BackgroundRemovalPreset(
     strength=0.75,
     resolution_mode=ResolutionMode.FIXED_1536,
     use_trimap_refine=True,
-    use_portrait_matting=True,
-    portrait_matting_strength=0.7,
-    portrait_matting_model="enhanced",
     edge_decontamination=True,
     decontamination_strength=0.75,
 )
@@ -107,11 +97,17 @@ PRESET_ULTRA = BackgroundRemovalPreset(
     strength=0.95,
     resolution_mode=ResolutionMode.FIXED_2048,
     use_trimap_refine=True,
-    use_portrait_matting=True,
-    portrait_matting_strength=0.9,
-    portrait_matting_model="birefnet",  # 使用 BiRefNet-matting 專業模型
     edge_decontamination=True,
     decontamination_strength=0.95,
+)
+
+PRESET_GREEN_SCREEN = BackgroundRemovalPreset(
+    strength=0.8,
+    resolution_mode=ResolutionMode.FIXED_1024,
+    use_trimap_refine=False,
+    edge_decontamination=True,
+    decontamination_strength=0.9,
+    color_filter=ColorFilterConfig(enabled=True, color=ColorFilter.GREEN),
 )
 
 
@@ -139,6 +135,7 @@ def get_preset(level: PresetLevel | str) -> BackgroundRemovalPreset:
         PresetLevel.BALANCED: PRESET_BALANCED,
         PresetLevel.HIGH: PRESET_HIGH,
         PresetLevel.ULTRA: PRESET_ULTRA,
+        PresetLevel.GREEN_SCREEN: PRESET_GREEN_SCREEN,
     }
 
     if level not in presets:
@@ -157,8 +154,9 @@ def list_presets() -> dict[str, str]:
     """
     return {
         "balanced": "中等 - 平衡速度與品質（強度 0.6，1024px）",
-        "high": "高 - 高品質處理（強度 0.75，1536px，人像精修）",
-        "ultra": "最強 - 全部參數拉滿（強度 0.95，2048px，MODNet 人像精修）",
+        "high": "高 - 高品質處理（強度 0.75，1536px）",
+        "ultra": "最強 - 全部參數拉滿（強度 0.95，2048px）",
+        "green_screen": "綠幕 - 針對綠色背景優化（強度 0.8 + 綠色 despill）",
     }
 
 
@@ -174,7 +172,6 @@ def print_preset_comparison() -> None:
         ["強度", "0.6", "0.75", "0.95"],
         ["解析度", "1024px", "1536px", "2048px"],
         ["Trimap 精修", "✓", "✓", "✓"],
-        ["人像精修", "✗", "✓ (Enhanced)", "✓ (MODNet)"],
         ["邊緣去污染", "✓ (0.6)", "✓ (0.75)", "✓ (0.95)"],
         ["適用場景", "日常使用", "專業工作", "極致品質"],
         ["處理速度", "快", "中", "慢"],
@@ -210,4 +207,4 @@ if __name__ == "__main__":
         print(f"  描述: {preset.description}")
         print(f"  強度: {preset.strength}")
         print(f"  解析度: {preset.resolution_mode.value}")
-        print(f"  人像精修: {preset.use_portrait_matting}")
+        print(f"  Trimap 精修: {preset.use_trimap_refine}")

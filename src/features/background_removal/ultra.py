@@ -42,7 +42,6 @@ from src.common import (
 )
 from src.common.preset_config import PresetLevel, get_preset
 from src.core.interfaces import BaseBackend
-from src.features.background_removal.portrait_matting import PortraitMattingRefiner
 
 
 logger = logging.getLogger(__name__)
@@ -93,9 +92,6 @@ class UltraBackend(BaseBackend):
         strength: float = 0.8,
         color_filter: ColorFilterConfig | None = None,
         use_trimap_refine: bool = True,
-        use_portrait_matting: bool = False,
-        portrait_matting_strength: float = 0.7,
-        portrait_matting_model: str = "enhanced",
         alpha_config: AlphaConfig | None = None,
         resolution_config: ResolutionConfig | None = None,
         device: str | None = None,
@@ -111,9 +107,6 @@ class UltraBackend(BaseBackend):
                      - 0.8-1.0: 激進（最大移除，可能損失細節）
             color_filter: 色彩過濾設定
             use_trimap_refine: 是否使用 trimap refinement（推薦開啟）
-            use_portrait_matting: 是否啟用人像 matting 精修（針對頭髮/邊緣）
-            portrait_matting_strength: 人像精修強度 (0.1-1.0)
-            portrait_matting_model: 人像精修模型（"enhanced" 或 "birefnet"）
             alpha_config: Alpha 處理設定（邊緣去污染、輸出模式）
             resolution_config: 解析度設定（1024/1536/2048/adaptive）
             device: 計算設備（cuda/cpu），None 則自動選擇
@@ -121,9 +114,6 @@ class UltraBackend(BaseBackend):
         super().__init__(strength=strength)
         self.color_filter = color_filter or ColorFilterConfig()
         self.use_trimap_refine = use_trimap_refine
-        self.use_portrait_matting = use_portrait_matting
-        self.portrait_matting_strength = portrait_matting_strength
-        self.portrait_matting_model = portrait_matting_model
         self.alpha_config = alpha_config or AlphaConfig()
         self.resolution_config = resolution_config or ResolutionConfig()
 
@@ -142,15 +132,11 @@ class UltraBackend(BaseBackend):
         self._model: Any = None
         self._transform_cache: dict[tuple[int, int], transforms.Compose] = {}
 
-        # 人像 matting 精修器（延遲初始化）
-        self._portrait_refiner: PortraitMattingRefiner | None = None
-
         logger.info(
-            "Ultra backend: device=%s, strength=%.1f, trimap=%s, portrait=%s (CC BY-NC 4.0)",
+            "Ultra backend: device=%s, strength=%.1f, trimap=%s (CC BY-NC 4.0)",
             self.device,
             self.strength,
             self.use_trimap_refine,
-            self.use_portrait_matting,
         )
 
     def load_model(self) -> None:
@@ -580,42 +566,31 @@ class UltraBackend(BaseBackend):
         """
         階段 4: 色彩過濾（針對純色背景）
 
+        綠色模式：只修改 RGB（不碰 alpha），避免過度移除。
+        黑/白模式：修改 alpha mask。
+
         Args:
-            image: RGB 圖片
+            image: RGB 圖片（會被 in-place 修改）
             alpha: 當前 alpha matte
 
         Returns:
-            精煉後的 alpha
+            精煉後的 alpha（綠色模式下不變）
         """
         if not self.color_filter.enabled or self.color_filter.color == ColorFilter.NONE:
             return alpha
 
         logger.debug("Applying color filter: %s", self.color_filter.color.value)
 
+        if self.color_filter.color == ColorFilter.GREEN:
+            # 綠色模式：純 RGB despill，不修改 alpha
+            self._apply_green_despill(image, alpha)
+            return alpha
+
+        # 黑/白模式：使用 alpha mask
         bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-        hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
         lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB)
 
-        # 建立色彩遮罩
-        if self.color_filter.color == ColorFilter.GREEN:
-            # 綠幕檢測
-            lower = np.array([self.color_filter.hue_range[0], 40, 40])
-            upper = np.array([self.color_filter.hue_range[1], 255, 255])
-            color_mask = cv2.inRange(hsv, lower, upper)
-
-            # Despill 綠色
-            r, g, b = (
-                image[:, :, 0].astype(np.float32),
-                image[:, :, 1].astype(np.float32),
-                image[:, :, 2].astype(np.float32),
-            )
-            rb_avg = (r + b) / 2
-            green_excess = np.maximum(g - rb_avg, 0)
-            image[:, :, 1] = np.clip(
-                g - green_excess * self.color_filter.edge_refine_strength, 0, 255
-            ).astype(np.uint8)
-
-        elif self.color_filter.color == ColorFilter.BLACK:
+        if self.color_filter.color == ColorFilter.BLACK:
             l_channel = lab[:, :, 0]
             color_mask = (l_channel < BLACK_THRESHOLD).astype(
                 np.uint8
@@ -632,19 +607,160 @@ class UltraBackend(BaseBackend):
 
         # 優化遮罩
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-        color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_CLOSE, kernel)
-        color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_OPEN, kernel)
+        color_mask = cv2.morphologyEx(  # type: ignore[assignment]
+            color_mask, cv2.MORPH_CLOSE, kernel
+        )
+        color_mask = cv2.morphologyEx(  # type: ignore[assignment]
+            color_mask, cv2.MORPH_OPEN, kernel
+        )
 
         # 腐蝕以避免顏色邊
         erode_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-        color_mask = cv2.erode(color_mask, erode_kernel, iterations=1)
+        color_mask = cv2.erode(  # type: ignore[assignment]
+            color_mask, erode_kernel, iterations=1
+        )
 
         # 羽化
-        color_mask = cv2.GaussianBlur(color_mask, (7, 7), 0)
+        color_mask = cv2.GaussianBlur(color_mask, (7, 7), 0)  # type: ignore[assignment]
 
         # 與現有 alpha 合併（取最小值）
         foreground_mask = PIXEL_MAX_VALUE - color_mask
         return np.minimum(alpha, foreground_mask)  # type: ignore[no-any-return]
+
+    @staticmethod
+    def _smooth_alpha_edges(alpha: np.ndarray, image: np.ndarray) -> np.ndarray:
+        """
+        Alpha 邊緣平滑：減少噪點和碎片化
+
+        使用 guided filter 在邊緣區域平滑 alpha，保留結構邊緣的銳度。
+        再用形態學操作清除孤立噪點。
+
+        Args:
+            alpha: Alpha matte (uint8)
+            image: RGB 圖片（作為 guided filter 的引導）
+
+        Returns:
+            平滑後的 alpha
+        """
+        alpha_f = alpha.astype(np.float32) / PIXEL_MAX_VALUE
+
+        edge = (alpha_f > 0.02) & (alpha_f < 0.98)  # noqa: PLR2004
+        if not np.any(edge):
+            return alpha
+
+        # Guided filter：用圖片亮度引導，保留真實邊緣
+        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY).astype(np.float32) / 255.0
+        smoothed = cv2.ximgproc.guidedFilter(gray, alpha_f, radius=3, eps=0.01)
+
+        # 只替換邊緣像素（不動前景/背景）
+        result_f = alpha_f.copy()
+        result_f[edge] = smoothed[edge]
+
+        return (result_f * PIXEL_MAX_VALUE).clip(0, PIXEL_MAX_VALUE).astype(np.uint8)
+
+    def _apply_green_despill(self, image: np.ndarray, alpha: np.ndarray) -> None:
+        """
+        綠色 despill：只修改 RGB，不碰 alpha。
+
+        使用「距離邊緣的距離」決定校正強度（而非 alpha 值），
+        因為模型可能將邊緣像素標記為完全不透明，但 RGB 仍帶有綠色污染。
+
+        校正邏輯：
+        - 距離背景越近 → 校正越強（proximity-based）
+        - 半透明像素 → 也按 (1-alpha) 校正
+        - 取兩者的最大值，確保不遺漏
+
+        Args:
+            image: RGB 圖片（in-place 修改）
+            alpha: Alpha matte（不修改）
+        """
+        alpha_norm = alpha.astype(np.float32) / PIXEL_MAX_VALUE
+        strength = self.color_filter.edge_refine_strength
+
+        r = image[:, :, 0].astype(np.float32)
+        g = image[:, :, 1].astype(np.float32)
+        b = image[:, :, 2].astype(np.float32)
+
+        # 計算綠色過剩量
+        rb_avg = (r + b) / 2
+        green_excess = np.maximum(g - rb_avg, 0)
+
+        # 基於距離的校正權重：距離背景越近 → 綠色污染越可能
+        bg_mask = (alpha_norm < 0.1).astype(np.uint8)  # noqa: PLR2004
+        if np.any(bg_mask):
+            fg_mask = (1 - bg_mask).astype(np.uint8)
+            distance = cv2.distanceTransform(fg_mask, cv2.DIST_L2, 5)
+            # 距離衰減：明亮綠背景的光溢可達 200px+
+            max_dist = 200.0
+            proximity = np.clip(1.0 - distance / max_dist, 0, 1).astype(np.float32)
+        else:
+            # 無背景區域時（全前景），退回 alpha 權重
+            proximity = np.zeros_like(alpha_norm)
+
+        # 也用 alpha 權重（半透明像素即使離邊緣遠也需校正）
+        alpha_weight = 1.0 - alpha_norm
+
+        # 取最大值：確保兩種情況都覆蓋
+        effective_weight = np.maximum(proximity, alpha_weight)
+
+        # 只對前景像素校正
+        effective_weight[alpha_norm < 0.01] = 0  # noqa: PLR2004
+
+        correction = green_excess * effective_weight * strength
+
+        image[:, :, 1] = np.clip(g - correction, 0, 255).astype(np.uint8)
+
+    @staticmethod
+    def _suppress_residual_green(image: np.ndarray, alpha: np.ndarray) -> np.ndarray:
+        """
+        階段 5.5: 去污染後的殘留綠色抑制
+
+        使用距離邊緣的距離（而非 alpha 值）來決定處理範圍，
+        因為不透明像素也可能帶有綠色污染（模型將綠色污染像素標為不透明）。
+
+        Args:
+            image: RGB 圖片
+            alpha: Alpha matte
+
+        Returns:
+            修正後的 RGB 圖片
+        """
+        alpha_norm = alpha.astype(np.float32) / PIXEL_MAX_VALUE
+        result = image.astype(np.float32)
+
+        r, g, b = result[:, :, 0], result[:, :, 1], result[:, :, 2]
+
+        # 使用距離而非 alpha 來判斷「邊緣附近」
+        bg_mask = (alpha_norm < 0.1).astype(np.uint8)  # noqa: PLR2004
+        if np.any(bg_mask):
+            fg_mask = (1 - bg_mask).astype(np.uint8)
+            distance = cv2.distanceTransform(fg_mask, cv2.DIST_L2, 5)
+            near_edge = (distance < 100) & (alpha_norm > 0.01)  # noqa: PLR2004
+        else:
+            # 無背景區域時，退回使用 alpha 範圍
+            near_edge = (alpha_norm > 0.01) & (alpha_norm < 0.99)  # noqa: PLR2004
+            distance = np.full_like(alpha_norm, 20.0)  # 預設中距離
+
+        if not np.any(near_edge):
+            return image
+
+        # 綠色過剩 = G - max(R, B)
+        green_excess = g - np.maximum(r, b)
+
+        # 閾值 3：即使微小的綠色過剩也要處理
+        green_problem = near_edge & (green_excess > 3)  # noqa: PLR2004
+        if not np.any(green_problem):
+            return image
+
+        # 容差基於距離：越靠近邊緣越嚴格
+        proximity = np.clip(1.0 - distance / 100.0, 0, 1)
+        tolerance = (1.0 - proximity) * 5  # 邊緣=0, 100px處=5
+        target_g = np.maximum(r, b) + tolerance
+        result[:, :, 1][green_problem] = np.minimum(
+            g[green_problem], target_g[green_problem]
+        )
+
+        return np.clip(result, 0, 255).astype(np.uint8)
 
     def process(self, input_path: Path, output_path: Path) -> bool:
         """
@@ -696,35 +812,16 @@ class UltraBackend(BaseBackend):
                     dilate_k,
                 )
 
-            # 階段 2.5: 人像 matting 精修（如果啟用）
-            if self.use_portrait_matting:
-                if self._portrait_refiner is None:
-                    self._portrait_refiner = PortraitMattingRefiner(
-                        model_name=self.portrait_matting_model, device=str(self.device)
-                    )
-
-                pre_portrait = alpha.copy()
-                alpha = self._portrait_refiner.refine_alpha(
-                    image_np, alpha, self.portrait_matting_strength
-                )
-
-                # 防止背景洩漏：與 trimap 相同的漸進式約束
-                # portrait matting 可能將背景側像素 alpha 拉高，造成色邊
-                pre_f = pre_portrait.astype(np.float32) / PIXEL_MAX_VALUE
-                new_f = alpha.astype(np.float32) / PIXEL_MAX_VALUE
-                max_inc = np.clip(pre_f / 0.3, 0.0, 1.0) * 0.1  # noqa: PLR2004
-                alpha = (np.minimum(new_f, pre_f + max_inc) * PIXEL_MAX_VALUE).astype(
-                    np.uint8
-                )
-
-                logger.debug(
-                    "Stage 2.5: Portrait matting refinement complete (%s)",
-                    self.portrait_matting_model,
-                )
-
             # 階段 3: Advanced defringing
-            image_np = self._apply_advanced_defringing(image_np, alpha)
-            logger.debug("Stage 3: Advanced defringing complete")
+            # 綠色模式已有 despill，跳過通用去色邊（避免與 despill 疊加造成紫色）
+            if not (
+                self.color_filter.enabled
+                and self.color_filter.color == ColorFilter.GREEN
+            ):
+                image_np = self._apply_advanced_defringing(image_np, alpha)
+                logger.debug("Stage 3: Advanced defringing complete")
+            else:
+                logger.debug("Stage 3: Skipped (green despill handles defringing)")
 
             # 階段 4: 色彩過濾（如果啟用）
             alpha = self._apply_color_filter(image_np, alpha)
@@ -732,13 +829,31 @@ class UltraBackend(BaseBackend):
 
             # 階段 5: 邊緣去污染（修復背景色滲透）
             if self.alpha_config.edge_decontamination:
+                decon_strength = self.alpha_config.decontamination_strength
+                # 綠色模式已有 despill，降低去污染強度避免紫色過校正
+                if (
+                    self.color_filter.enabled
+                    and self.color_filter.color == ColorFilter.GREEN
+                ):
+                    decon_strength = min(decon_strength, 0.15)
                 image_np = decontaminate_edges(
                     image_np,
                     alpha,
-                    self.alpha_config.decontamination_strength,
+                    decon_strength,
                     use_kmeans=True,  # 使用 KMeans 智能背景色估計
                 )
-                logger.debug("Stage 5: Edge decontamination complete (KMeans)")
+                logger.debug(
+                    "Stage 5: Edge decontamination complete (strength=%.2f)",
+                    decon_strength,
+                )
+
+            # 階段 5.5: 殘留綠色抑制（去污染後的最終清理）
+            if (
+                self.color_filter.enabled
+                and self.color_filter.color == ColorFilter.GREEN
+            ):
+                image_np = self._suppress_residual_green(image_np, alpha)
+                logger.debug("Stage 5.5: Residual green suppression complete")
 
             # 階段 6: Alpha 模式處理
             if self.alpha_config.mode.value == "premultiplied":
@@ -802,9 +917,6 @@ class UltraBackend(BaseBackend):
             strength=preset.strength,
             color_filter=final_color_filter,
             use_trimap_refine=preset.use_trimap_refine,
-            use_portrait_matting=preset.use_portrait_matting,
-            portrait_matting_strength=preset.portrait_matting_strength,
-            portrait_matting_model=preset.portrait_matting_model,
             alpha_config=preset.to_alpha_config(),
             resolution_config=preset.to_resolution_config(),
             device=device,

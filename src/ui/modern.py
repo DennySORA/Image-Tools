@@ -347,7 +347,6 @@ class ModernUI:
         """
         color = saved.get("color_filter", "none")
         trimap = "開" if saved.get("use_trimap_refine", True) else "關"
-        portrait = "開" if saved.get("use_portrait_matting", False) else "關"
         alpha = saved.get("alpha_mode", "straight")
         decontam = "開" if saved.get("edge_decontamination", True) else "關"
         resolution = saved.get("resolution_mode", "1024")
@@ -357,11 +356,6 @@ class ModernUI:
         print(f"  💪 強度: {float(saved.get('strength', 0.8)):.2f}")
         print(f"  🎨 色彩過濾: {color}")
         print(f"  🔲 Trimap 精修: {trimap}")
-        print(f"  👤 人像精修: {portrait}")
-        if saved.get("use_portrait_matting", False):
-            pm_str = float(saved.get("portrait_matting_strength", 0.7))
-            pm_model = saved.get("portrait_matting_model", "enhanced")
-            print(f"     強度: {pm_str:.2f} / 模型: {pm_model}")
         print(f"  📐 Alpha 模式: {alpha}")
         print(f"  🧹 邊緣去污染: {decontam}")
         print(f"  📏 解析度: {resolution}")
@@ -449,56 +443,7 @@ class ModernUI:
         if use_trimap is None:
             return None
 
-        # 4. 人像 Matting 精修
-        try:
-            use_portrait = inquirer.confirm(  # type: ignore[attr-defined]
-                message="啟用人像 Matting 精修？（針對頭髮/邊緣）",
-                default=d.get("use_portrait_matting", False),
-                mandatory=False,
-            ).execute()
-        except KeyboardInterrupt:
-            return None
-        if use_portrait is None:
-            return None
-
-        portrait_strength = 0.7
-        portrait_model = "enhanced"
-        if use_portrait:
-            # 4a. 人像精修強度
-            try:
-                portrait_strength = inquirer.number(  # type: ignore[attr-defined]
-                    message="人像精修強度 (0.1-1.0):",
-                    min_allowed=0.1,
-                    max_allowed=1.0,
-                    default=d.get("portrait_matting_strength", 0.7),
-                    float_allowed=True,
-                    mandatory=False,
-                ).execute()
-            except KeyboardInterrupt:
-                return None
-            if portrait_strength is None:
-                return None
-
-            # 4b. 人像精修模型
-            pm_choices = [
-                Choice(value="enhanced", name="Enhanced（推薦）"),
-                Choice(value="birefnet", name="BiRefNet"),
-                Separator(),
-                Choice(value=None, name="⬅️  返回上一步"),
-            ]
-            try:
-                portrait_model = inquirer.select(  # type: ignore[attr-defined]
-                    message="人像精修模型:",
-                    choices=pm_choices,
-                    default=d.get("portrait_matting_model", "enhanced"),
-                    mandatory=False,
-                ).execute()
-            except KeyboardInterrupt:
-                return None
-            if portrait_model is None:
-                return None
-
-        # 5. Alpha 模式
+        # 4. Alpha 模式
         alpha_choices = [
             Choice(value="straight", name="Straight（標準，適合大多數場景）"),
             Choice(value="premultiplied", name="Premultiplied（適合特定合成需求）"),
@@ -555,9 +500,6 @@ class ModernUI:
             "strength": float(strength),
             "color_filter": color_filter,
             "use_trimap_refine": use_trimap,
-            "use_portrait_matting": use_portrait,
-            "portrait_matting_strength": float(portrait_strength),
-            "portrait_matting_model": portrait_model,
             "alpha_mode": alpha_mode,
             "edge_decontamination": edge_decontam,
             "resolution_mode": resolution_mode,

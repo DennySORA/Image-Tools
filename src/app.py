@@ -150,16 +150,6 @@ class ApplicationService:
         if "use_trimap_refine" in extra:
             kwargs["use_trimap_refine"] = bool(extra["use_trimap_refine"])
 
-        # 人像 Matting 精修
-        if "use_portrait_matting" in extra:
-            kwargs["use_portrait_matting"] = bool(extra["use_portrait_matting"])
-        if "portrait_matting_strength" in extra:
-            kwargs["portrait_matting_strength"] = float(
-                extra["portrait_matting_strength"]  # type: ignore[arg-type]
-            )
-        if "portrait_matting_model" in extra:
-            kwargs["portrait_matting_model"] = str(extra["portrait_matting_model"])
-
         # Alpha 設定
         alpha_mode = str(extra.get("alpha_mode", "straight"))
         edge_decontam = bool(extra.get("edge_decontamination", True))

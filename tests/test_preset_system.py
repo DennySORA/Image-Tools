@@ -27,8 +27,6 @@ class TestPresetDefinitions:
         assert preset.strength == 0.6
         assert preset.resolution_mode == ResolutionMode.FIXED_1024
         assert preset.use_trimap_refine is True
-        assert preset.use_portrait_matting is False
-        assert preset.portrait_matting_model == "enhanced"
         assert preset.edge_decontamination is True
         assert preset.decontamination_strength == 0.6
 
@@ -39,9 +37,6 @@ class TestPresetDefinitions:
         assert preset.strength == 0.75
         assert preset.resolution_mode == ResolutionMode.FIXED_1536
         assert preset.use_trimap_refine is True
-        assert preset.use_portrait_matting is True
-        assert preset.portrait_matting_strength == 0.7
-        assert preset.portrait_matting_model == "enhanced"
         assert preset.edge_decontamination is True
         assert preset.decontamination_strength == 0.75
 
@@ -52,9 +47,6 @@ class TestPresetDefinitions:
         assert preset.strength == 0.95
         assert preset.resolution_mode == ResolutionMode.FIXED_2048
         assert preset.use_trimap_refine is True
-        assert preset.use_portrait_matting is True
-        assert preset.portrait_matting_strength == 0.9
-        assert preset.portrait_matting_model == "birefnet"
         assert preset.edge_decontamination is True
         assert preset.decontamination_strength == 0.95
 
@@ -92,7 +84,8 @@ class TestPresetDefinitions:
         assert "balanced" in presets
         assert "high" in presets
         assert "ultra" in presets
-        assert len(presets) == 3
+        assert "green_screen" in presets
+        assert len(presets) == 4  # noqa: PLR2004
 
         # 檢查描述包含關鍵資訊
         assert "0.6" in presets["balanced"]
@@ -115,9 +108,7 @@ class TestPresetConversion:
 
         assert alpha_config.mode == AlphaMode.STRAIGHT
         assert alpha_config.edge_decontamination == preset.edge_decontamination
-        assert (
-            alpha_config.decontamination_strength == preset.decontamination_strength
-        )
+        assert alpha_config.decontamination_strength == preset.decontamination_strength
 
     def test_to_resolution_config(self) -> None:
         """測試轉換為 ResolutionConfig"""
@@ -144,7 +135,6 @@ class TestUltraBackendFromPreset:
         assert backend.strength == 0.6
         assert backend.resolution_config.mode == ResolutionMode.FIXED_1024
         assert backend.use_trimap_refine is True
-        assert backend.use_portrait_matting is False
         assert backend.alpha_config.edge_decontamination is True
 
     def test_create_from_high_preset(self) -> None:
@@ -153,9 +143,6 @@ class TestUltraBackendFromPreset:
 
         assert backend.strength == 0.75
         assert backend.resolution_config.mode == ResolutionMode.FIXED_1536
-        assert backend.use_portrait_matting is True
-        assert backend.portrait_matting_model == "enhanced"
-        assert backend.portrait_matting_strength == 0.7
 
     def test_create_from_ultra_preset(self) -> None:
         """測試從 Ultra 預設創建後端"""
@@ -163,9 +150,6 @@ class TestUltraBackendFromPreset:
 
         assert backend.strength == 0.95
         assert backend.resolution_config.mode == ResolutionMode.FIXED_2048
-        assert backend.use_portrait_matting is True
-        assert backend.portrait_matting_model == "birefnet"
-        assert backend.portrait_matting_strength == 0.9
 
     def test_create_with_preset_level_enum(self) -> None:
         """測試使用 PresetLevel 枚舉創建後端"""
@@ -222,14 +206,6 @@ class TestPresetStrengthProgression:
             < ultra.decontamination_strength
         )
 
-    def test_portrait_matting_strength_increases(self) -> None:
-        """測試人像精修強度遞增"""
-        high = get_preset("high")
-        ultra = get_preset("ultra")
-
-        # Balanced 不啟用人像精修，所以只比較 High 和 Ultra
-        assert high.portrait_matting_strength < ultra.portrait_matting_strength
-
 
 class TestPresetFeatureEnablement:
     """測試預設功能啟用狀態"""
@@ -245,23 +221,6 @@ class TestPresetFeatureEnablement:
         for level in ["balanced", "high", "ultra"]:
             preset = get_preset(level)
             assert preset.edge_decontamination is True
-
-    def test_portrait_matting_progression(self) -> None:
-        """測試人像精修的逐步啟用"""
-        balanced = get_preset("balanced")
-        high = get_preset("high")
-        ultra = get_preset("ultra")
-
-        # Balanced 不啟用
-        assert balanced.use_portrait_matting is False
-
-        # High 和 Ultra 都啟用
-        assert high.use_portrait_matting is True
-        assert ultra.use_portrait_matting is True
-
-        # 但模型不同
-        assert high.portrait_matting_model == "enhanced"
-        assert ultra.portrait_matting_model == "birefnet"
 
 
 class TestPresetColorFilter:

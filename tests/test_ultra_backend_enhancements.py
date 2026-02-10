@@ -52,55 +52,6 @@ class TestDynamicTrimapParameters:
         assert kernel_huge <= 30  # noqa: PLR2004
 
 
-class TestPortraitMattingIntegration:
-    """測試人像 Matting 整合"""
-
-    @pytest.fixture
-    def portrait_test_image(self, tmp_path: Path) -> Path:
-        """建立測試用人像圖片"""
-        # 讀取合成的人像圖片
-        synthetic_path = Path("tests/fixtures/synthetic/portrait_like_512.png")
-
-        if synthetic_path.exists():
-            return synthetic_path
-
-        # 如果不存在，建立一個簡單的
-        img = Image.new("RGB", (512, 512), (200, 200, 220))
-        from PIL import ImageDraw
-
-        draw = ImageDraw.Draw(img)
-        draw.ellipse((156, 126, 356, 386), fill=(220, 180, 150))
-
-        output_path = tmp_path / "test_portrait.png"
-        img.save(output_path)
-        return output_path
-
-    def test_portrait_matting_disabled(self, portrait_test_image: Path) -> None:
-        """測試停用人像 matting"""
-        backend = UltraBackend(
-            use_portrait_matting=False,
-            use_trimap_refine=False,
-            device="cpu",
-        )
-
-        # 檢查設定
-        assert not backend.use_portrait_matting
-        assert backend._portrait_refiner is None
-
-    def test_portrait_matting_enabled(self, portrait_test_image: Path) -> None:
-        """測試啟用人像 matting"""
-        backend = UltraBackend(
-            use_portrait_matting=True,
-            portrait_matting_strength=0.8,
-            use_trimap_refine=False,
-            device="cpu",
-        )
-
-        # 檢查設定
-        assert backend.use_portrait_matting
-        assert backend.portrait_matting_strength == 0.8  # noqa: PLR2004
-
-
 class TestKMeansBackgroundEstimation:
     """測試 KMeans 背景估計整合"""
 
@@ -146,7 +97,6 @@ class TestFullPipelineWithSyntheticImages:
         backend = UltraBackend(
             strength=0.7,
             use_trimap_refine=False,
-            use_portrait_matting=False,
             device="cpu",
         )
 
@@ -174,7 +124,6 @@ class TestFullPipelineWithSyntheticImages:
         backend = UltraBackend(
             strength=0.7,
             use_trimap_refine=True,  # 啟用 trimap（動態參數）
-            use_portrait_matting=False,
             device="cpu",
         )
 
@@ -184,39 +133,6 @@ class TestFullPipelineWithSyntheticImages:
         try:
             backend.load_model()
             success = backend.process(test_image, output_path)
-
-            if success:
-                assert output_path.exists()
-        except Exception as e:  # noqa: BLE001
-            pytest.skip(f"Backend processing failed: {e!s}")
-
-    def test_with_portrait_matting(
-        self, synthetic_images: list[Path], output_dir: Path
-    ) -> None:
-        """測試帶人像 matting 的流程"""
-        # 尋找人像測試圖片
-        portrait_image = None
-        for img in synthetic_images:
-            if "portrait" in img.name:
-                portrait_image = img
-                break
-
-        if portrait_image is None:
-            pytest.skip("No portrait image found")
-
-        backend = UltraBackend(
-            strength=0.7,
-            use_trimap_refine=True,
-            use_portrait_matting=True,  # 啟用人像精修
-            portrait_matting_strength=0.8,
-            device="cpu",
-        )
-
-        output_path = output_dir / f"portrait_{portrait_image.name}"
-
-        try:
-            backend.load_model()
-            success = backend.process(portrait_image, output_path)
 
             if success:
                 assert output_path.exists()

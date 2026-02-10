@@ -9,7 +9,7 @@ from enum import StrEnum
 import cv2
 import numpy as np
 from pydantic import BaseModel, Field
-from sklearn.cluster import KMeans
+from sklearn.cluster import KMeans  # type: ignore[import-untyped]
 
 
 # 常數定義
@@ -141,7 +141,7 @@ def estimate_background_colors_kmeans(
 
     # 如果樣本太少，使用中位數
     if len(background_pixels) < min_samples:
-        return np.median(background_pixels, axis=0, keepdims=True)
+        return np.median(background_pixels, axis=0, keepdims=True)  # type: ignore[no-any-return]
 
     # 自適應選擇聚類數量
     if n_clusters is None:
@@ -161,7 +161,7 @@ def estimate_background_colors_kmeans(
     try:
         # 如果只有一個聚類，直接返回平均值
         if n_clusters == 1:
-            return np.mean(background_pixels, axis=0, keepdims=True)
+            return np.mean(background_pixels, axis=0, keepdims=True)  # type: ignore[no-any-return]
 
         kmeans = KMeans(
             n_clusters=n_clusters,
@@ -179,14 +179,14 @@ def estimate_background_colors_kmeans(
         if return_all_clusters:
             # 按聚類大小排序
             sorted_indices = np.argsort(cluster_sizes)[::-1]
-            return cluster_centers[sorted_indices]
+            return cluster_centers[sorted_indices]  # type: ignore[no-any-return]
 
         # 返回最大集群的顏色作為主要背景色
-        return cluster_centers[np.argmax(cluster_sizes)].reshape(1, 3)
+        return cluster_centers[np.argmax(cluster_sizes)].reshape(1, 3)  # type: ignore[no-any-return]
 
     except Exception:  # noqa: BLE001
         # 如果 KMeans 失敗，回退到中位數
-        return np.median(background_pixels, axis=0, keepdims=True)
+        return np.median(background_pixels, axis=0, keepdims=True)  # type: ignore[no-any-return]
 
 
 def decontaminate_edges(  # noqa: C901, PLR0912, PLR0915
@@ -326,7 +326,7 @@ def decontaminate_edges(  # noqa: C901, PLR0912, PLR0915
         # 考慮 gamma 校正和邊緣梯度
         gamma_correction = 1.0 + (1.0 - alpha_normalized[:, :, np.newaxis]) * 0.2
 
-        return (
+        return (  # type: ignore[no-any-return]
             (result - bg_contribution * correction_strength)
             / (alpha_safe + (1 - alpha_safe) * (1 - correction_strength))
         ) * gamma_correction
