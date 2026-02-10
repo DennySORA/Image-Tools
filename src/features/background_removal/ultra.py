@@ -376,7 +376,8 @@ class UltraBackend(BaseBackend):
         Returns:
             精煉後的 alpha
         """
-        refined_alpha = alpha.copy().astype(np.float32) / PIXEL_MAX_VALUE
+        original_alpha = alpha.astype(np.float32) / PIXEL_MAX_VALUE
+        refined_alpha = original_alpha.copy()
 
         # 找出未知區域
         unknown_mask = trimap == TRIMAP_UNKNOWN
@@ -402,20 +403,12 @@ class UltraBackend(BaseBackend):
         # 只替換未知區域
         refined_alpha[unknown_mask] = refined_in_unknown[unknown_mask]
 
-        # 再做一次邊緣柔化（只在未知區附近）
-        edge_mask = cv2.dilate(
-            unknown_mask.astype(np.uint8),
-            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)),
-            iterations=1,
-        ).astype(bool)
-
-        if np.any(edge_mask):
-            blur_size = int(3 + self.strength * 4)  # 3-7
-            if blur_size % 2 == 0:
-                blur_size += 1
-
-            blurred = cv2.GaussianBlur(refined_alpha, (blur_size, blur_size), 0)
-            refined_alpha[edge_mask] = blurred[edge_mask]
+        # 防止背景洩漏：允許的 alpha 增量與原始 alpha 成正比
+        # 導向濾波可能將背景側像素的 alpha 向上平滑，
+        # 導致背景色（如綠色）滲入半透明邊緣
+        # 漸進式約束：alpha=0 → 不可增加，alpha≥0.3 → 最多增加 0.1
+        max_increase = np.clip(original_alpha / 0.3, 0.0, 1.0) * 0.1  # noqa: PLR2004
+        refined_alpha = np.minimum(refined_alpha, original_alpha + max_increase)
 
         return (refined_alpha * PIXEL_MAX_VALUE).astype(np.uint8)
 
@@ -710,9 +703,20 @@ class UltraBackend(BaseBackend):
                         model_name=self.portrait_matting_model, device=str(self.device)
                     )
 
+                pre_portrait = alpha.copy()
                 alpha = self._portrait_refiner.refine_alpha(
                     image_np, alpha, self.portrait_matting_strength
                 )
+
+                # 防止背景洩漏：與 trimap 相同的漸進式約束
+                # portrait matting 可能將背景側像素 alpha 拉高，造成色邊
+                pre_f = pre_portrait.astype(np.float32) / PIXEL_MAX_VALUE
+                new_f = alpha.astype(np.float32) / PIXEL_MAX_VALUE
+                max_inc = np.clip(pre_f / 0.3, 0.0, 1.0) * 0.1  # noqa: PLR2004
+                alpha = (np.minimum(new_f, pre_f + max_inc) * PIXEL_MAX_VALUE).astype(
+                    np.uint8
+                )
+
                 logger.debug(
                     "Stage 2.5: Portrait matting refinement complete (%s)",
                     self.portrait_matting_model,

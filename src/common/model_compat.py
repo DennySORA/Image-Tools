@@ -25,16 +25,19 @@ def _suppress_loading_noise() -> Iterator[None]:
     """暫時抑制模型載入期間的冗餘輸出（httpx、transformers、timm、tqdm）"""
     # 保存原始狀態
     orig_verbosity = transformers.logging.get_verbosity()
-    httpx_logger = logging.getLogger("httpx")
-    orig_httpx_level = httpx_logger.level
-    hf_logger = logging.getLogger("huggingface_hub")
-    orig_hf_level = hf_logger.level
+    noisy_loggers = ["httpx", "httpcore", "huggingface_hub"]
+    orig_levels = {name: logging.getLogger(name).level for name in noisy_loggers}
     orig_tqdm_disable = os.environ.get("TQDM_DISABLE")
 
-    # 抑制: transformers 日誌、httpx HTTP 請求、huggingface_hub、tqdm 進度條
+    # 抑制: transformers 日誌 + 進度條
     transformers.logging.set_verbosity_error()  # type: ignore[no-untyped-call]
-    httpx_logger.setLevel(logging.WARNING)
-    hf_logger.setLevel(logging.WARNING)
+    transformers.logging.disable_progress_bar()  # type: ignore[no-untyped-call]
+
+    # 抑制: httpx/httpcore HTTP 請求、huggingface_hub
+    for name in noisy_loggers:
+        logging.getLogger(name).setLevel(logging.WARNING)
+
+    # 抑制: tqdm 進度條（備用）
     os.environ["TQDM_DISABLE"] = "1"
 
     # 抑制: timm FutureWarning
@@ -43,9 +46,10 @@ def _suppress_loading_noise() -> Iterator[None]:
         try:
             yield
         finally:
-            transformers.logging.set_verbosity(orig_verbosity)  # type: ignore[no-untyped-call]
-            httpx_logger.setLevel(orig_httpx_level)
-            hf_logger.setLevel(orig_hf_level)
+            transformers.logging.set_verbosity(orig_verbosity)
+            transformers.logging.enable_progress_bar()  # type: ignore[no-untyped-call]
+            for name, level in orig_levels.items():
+                logging.getLogger(name).setLevel(level)
             if orig_tqdm_disable is None:
                 os.environ.pop("TQDM_DISABLE", None)
             else:
