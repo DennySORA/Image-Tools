@@ -21,17 +21,17 @@ from typing import Any
 
 import cv2
 import numpy as np
-from PIL import Image
+
 
 # 添加 src 到 path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.common import ColorFilter, ColorFilterConfig
-from src.common.preset_config import PresetLevel, get_preset
-from src.backends.registry import BackendRegistry
-
 # 確保後端已註冊
 import src.backends  # noqa: F401
+from src.backends.registry import BackendRegistry
+from src.common import ColorFilter, ColorFilterConfig
+from src.common.preset_config import PresetLevel
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -132,7 +132,11 @@ def analyze_image_quality(
         green_spill_pixels = np.sum(green_excess_fg > 10)  # 閾值 10
         green_spill_ratio = green_spill_pixels / np.sum(foreground_mask)
         green_spill_max = np.max(green_excess_fg) if len(green_excess_fg) > 0 else 0
-        green_spill_mean = np.mean(green_excess_fg[green_excess_fg > 0]) if np.any(green_excess_fg > 0) else 0
+        green_spill_mean = (
+            np.mean(green_excess_fg[green_excess_fg > 0])
+            if np.any(green_excess_fg > 0)
+            else 0
+        )
     else:
         green_spill_ratio = 0
         green_spill_max = 0
@@ -156,12 +160,16 @@ def analyze_image_quality(
     orig_b = original_rgb[:, :, 2].astype(np.float32)
 
     # 非綠色區域 = 綠色不是最大值，或差距小
-    non_green_orig = (orig_g < np.maximum(orig_r, orig_b) + 30)
+    non_green_orig = orig_g < np.maximum(orig_r, orig_b) + 30
 
     # 這些區域被移除了（alpha < 0.5）
     removed_mask = alpha_norm < 0.5
     over_removal_pixels = np.sum(non_green_orig & removed_mask)
-    over_removal_ratio = over_removal_pixels / np.sum(non_green_orig) if np.sum(non_green_orig) > 0 else 0
+    over_removal_ratio = (
+        over_removal_pixels / np.sum(non_green_orig)
+        if np.sum(non_green_orig) > 0
+        else 0
+    )
 
     # === 4. Alpha 品質分析 ===
     # Alpha 梯度（邊緣平滑度）
@@ -189,10 +197,7 @@ def analyze_image_quality(
     alpha_score = min(100, edge_sharpness * 500 + (1 - alpha_noise) * 50)
 
     total_score = (
-        green_score * 0.4 +
-        edge_score * 0.3 +
-        removal_score * 0.2 +
-        alpha_score * 0.1
+        green_score * 0.4 + edge_score * 0.3 + removal_score * 0.2 + alpha_score * 0.1
     )
 
     return {
@@ -309,7 +314,9 @@ def run_test(
         config_results["average_score"] = sum(scores) / len(scores) if scores else 0
 
         results["configs"][config_name] = config_results
-        logger.info("\n配置 %s 平均分數: %.1f", config_name, config_results["average_score"])
+        logger.info(
+            "\n配置 %s 平均分數: %.1f", config_name, config_results["average_score"]
+        )
 
     return results
 
