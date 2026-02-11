@@ -181,6 +181,10 @@ class ModernUI:
                 value="background-removal",
                 name="🎨 背景移除 - 使用 AI 移除背景",
             ),
+            Choice(
+                value="batch-compare",
+                name="🔬 批次比對 - 測試多組參數並生成比對報告",
+            ),
             Separator(),
             Choice(value=None, name="⬅️  返回上一步"),
         ]
@@ -214,6 +218,7 @@ class ModernUI:
             "watermark-removal": "gemini-watermark",
             "image-splitting": "image-splitter",
             "background-removal": "ultra",  # 使用極致後端（非商用，最強效果）
+            "batch-compare": "batch-compare",  # 批次比對測試
         }
 
         backend_name = backend_map.get(operation)
@@ -286,6 +291,22 @@ class ModernUI:
                 return None
         elif backend_name == "ultra":
             return self._configure_ultra(backend_name, model)
+        elif backend_name == "batch-compare":
+            # 批次比對固定強度，詢問是否自動打開報告
+            try:
+                auto_open = inquirer.confirm(  # type: ignore[attr-defined]
+                    message="完成後自動打開比對報告？",
+                    default=True,
+                    mandatory=False,
+                ).execute()
+            except KeyboardInterrupt:
+                return None
+
+            if auto_open is None:
+                return None
+
+            extra_config["auto_open"] = auto_open
+            strength = 0.8  # 固定值
         else:
             # 其他背景移除使用滑桿選擇強度
             try:
