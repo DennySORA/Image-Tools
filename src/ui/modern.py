@@ -20,6 +20,17 @@ from src.data_model import ProcessConfig
 from src.ui.history import PathHistory, SettingsHistory
 
 
+# GREEN_SCREEN 預設配置（測試最佳參數）
+DEFAULT_ULTRA_SETTINGS: dict[str, Any] = {
+    "strength": 0.8,
+    "color_filter": "green",
+    "use_trimap_refine": False,
+    "alpha_mode": "straight",
+    "edge_decontamination": True,
+    "resolution_mode": "1024",
+}
+
+
 class ModernUI:
     """
     現代化使用者介面
@@ -343,20 +354,37 @@ class ModernUI:
         """
         saved = self._settings.load()
 
-        # 如果有上次設定，顯示摘要並詢問是否沿用
+        # 如果有上次設定，顯示摘要並詢問操作
         if saved is not None:
-            reuse = self._ask_reuse_ultra_settings(saved)
-            if reuse is None:
+            action = self._ask_reuse_ultra_settings(saved)
+            if action is None:
                 return None  # ESC
-            if reuse:
+
+            if action == "reuse":
+                # 沿用上次設定
                 strength = float(saved["strength"])
                 extra_config = {k: v for k, v in saved.items() if k != "strength"}
                 return (backend_name, model, strength, extra_config)
 
-        # 全新設定或重新設定（使用上次值作為預設）
-        return self._prompt_ultra_settings(backend_name, model, defaults=saved)
+            if action == "reset":
+                # 還原預設（綠幕優化）
+                self._settings.save(DEFAULT_ULTRA_SETTINGS)
+                strength = float(DEFAULT_ULTRA_SETTINGS["strength"])
+                extra_config = {
+                    k: v for k, v in DEFAULT_ULTRA_SETTINGS.items() if k != "strength"
+                }
+                print("\n✅ 已還原為預設設定（綠幕優化）")
+                return (backend_name, model, strength, extra_config)
 
-    def _ask_reuse_ultra_settings(self, saved: dict[str, Any]) -> bool | None:
+            # action == "new"：重新設定（使用上次值作為預設）
+            return self._prompt_ultra_settings(backend_name, model, defaults=saved)
+
+        # 首次使用：使用預設值
+        return self._prompt_ultra_settings(
+            backend_name, model, defaults=DEFAULT_ULTRA_SETTINGS
+        )
+
+    def _ask_reuse_ultra_settings(self, saved: dict[str, Any]) -> str | None:
         """
         顯示上次 Ultra 設定摘要，詢問是否沿用
 
@@ -364,7 +392,7 @@ class ModernUI:
             saved: 上次儲存的設定
 
         Returns:
-            True=沿用, False=重新設定, None=ESC
+            "reuse"=沿用, "reset"=還原預設, "new"=重新設定, None=ESC
         """
         color = saved.get("color_filter", "none")
         trimap = "開" if saved.get("use_trimap_refine", True) else "關"
@@ -382,10 +410,19 @@ class ModernUI:
         print(f"  📏 解析度: {resolution}")
         print("-" * 50)
 
+        choices = [
+            Choice(value="reuse", name="✅ 使用上次的設定"),
+            Choice(value="reset", name="🔄 還原預設（綠幕優化）"),
+            Choice(value="new", name="⚙️  重新設定"),
+            Separator(),
+            Choice(value=None, name="⬅️  取消"),
+        ]
+
         try:
-            result = inquirer.confirm(  # type: ignore[attr-defined]
-                message="使用上次的設定？",
-                default=True,
+            result = inquirer.select(  # type: ignore[attr-defined]
+                message="選擇操作：",
+                choices=choices,
+                default="reuse",
                 mandatory=False,
             ).execute()
         except KeyboardInterrupt:
