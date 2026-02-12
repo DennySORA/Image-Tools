@@ -99,6 +99,7 @@ max-complexity = 10
 "src/features/background_removal/portrait_matting.py" = ["PLC0415", "TRY300"]  # Allow dynamic imports for optional dependencies
 "src/features/background_removal/ultra.py" = ["PLC0415"]  # Allow local imports in classmethod
 "src/backends/__init__.py" = ["PLC0415"]  # Allow lazy imports to avoid circular dependencies
+"scripts/*.py" = ["T201", "PLR2004", "N806", "PLR0915"]  # Allow print, magic values, class-like variable names, and many statements in scripts
 "tests/*.py" = ["S101", "PLR2004", "PLC0415", "SIM117", "TRY300"]  # Allow assert, magic values, local imports, nested with, and try-return in tests
 
 # ---------------- mypy ----------------
