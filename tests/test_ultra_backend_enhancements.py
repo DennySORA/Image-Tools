@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 from src.common import ColorFilter, ColorFilterConfig, ResolutionConfig
+from src.features.background_removal.trimap import calculate_trimap_kernel_size
 from src.features.background_removal.ultra import UltraBackend
 
 
@@ -15,10 +16,8 @@ class TestDynamicTrimapParameters:
 
     def test_kernel_size_calculation_small_image(self) -> None:
         """測試小圖的核大小計算"""
-        backend = UltraBackend(device="cpu")
-
         # 512x512 圖片
-        kernel_size = backend._calculate_trimap_kernel_size((512, 512), base_kernel=10)
+        kernel_size = calculate_trimap_kernel_size((512, 512), base_kernel=10)
 
         # 應該小於基準值（1024）
         assert 5 <= kernel_size <= 30  # noqa: PLR2004
@@ -26,12 +25,8 @@ class TestDynamicTrimapParameters:
 
     def test_kernel_size_calculation_large_image(self) -> None:
         """測試大圖的核大小計算"""
-        backend = UltraBackend(device="cpu")
-
         # 2048x2048 圖片
-        kernel_size = backend._calculate_trimap_kernel_size(
-            (2048, 2048), base_kernel=10
-        )
+        kernel_size = calculate_trimap_kernel_size((2048, 2048), base_kernel=10)
 
         # 應該大於基準值
         assert 5 <= kernel_size <= 30  # noqa: PLR2004
@@ -39,16 +34,12 @@ class TestDynamicTrimapParameters:
 
     def test_kernel_size_limits(self) -> None:
         """測試核大小的上下限"""
-        backend = UltraBackend(device="cpu")
-
         # 極小圖
-        kernel_tiny = backend._calculate_trimap_kernel_size((64, 64), base_kernel=10)
+        kernel_tiny = calculate_trimap_kernel_size((64, 64), base_kernel=10)
         assert kernel_tiny >= 5  # noqa: PLR2004
 
         # 極大圖
-        kernel_huge = backend._calculate_trimap_kernel_size(
-            (8192, 8192), base_kernel=10
-        )
+        kernel_huge = calculate_trimap_kernel_size((8192, 8192), base_kernel=10)
         assert kernel_huge <= 30  # noqa: PLR2004
 
 

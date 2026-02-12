@@ -17,6 +17,9 @@ import numpy as np
 import pytest
 from PIL import Image
 from src.backends.ultra import ColorFilter, ColorFilterConfig, UltraBackend
+from src.features.background_removal.color_filter import apply_color_filter
+from src.features.background_removal.defringing import apply_advanced_defringing
+from src.features.background_removal.trimap import create_trimap
 
 
 class TestUltraBackendInit:
@@ -109,13 +112,11 @@ class TestTrimapCreation:
 
     def test_create_trimap_basic(self) -> None:
         """測試基本 trimap 建立"""
-        backend = UltraBackend()
-
         # 創建簡單的 alpha (中心白色，外圍黑色)
         alpha = np.zeros((100, 100), dtype=np.uint8)
         alpha[30:70, 30:70] = 255
 
-        trimap = backend._create_trimap(alpha, erode_kernel=5, dilate_kernel=5)
+        trimap = create_trimap(alpha, erode_kernel=5, dilate_kernel=5)
 
         # 檢查 trimap 值
         assert trimap.shape == alpha.shape
@@ -125,10 +126,9 @@ class TestTrimapCreation:
 
     def test_create_trimap_all_foreground(self) -> None:
         """測試全前景的情況"""
-        backend = UltraBackend()
         alpha = np.full((100, 100), 255, dtype=np.uint8)
 
-        trimap = backend._create_trimap(alpha, erode_kernel=5, dilate_kernel=5)
+        trimap = create_trimap(alpha, erode_kernel=5, dilate_kernel=5)
 
         # 應該主要是前景，可能有少量未知區
         assert np.sum(trimap == 255) > np.sum(trimap == 128)
@@ -136,10 +136,9 @@ class TestTrimapCreation:
 
     def test_create_trimap_all_background(self) -> None:
         """測試全背景的情況"""
-        backend = UltraBackend()
         alpha = np.zeros((100, 100), dtype=np.uint8)
 
-        trimap = backend._create_trimap(alpha, erode_kernel=5, dilate_kernel=5)
+        trimap = create_trimap(alpha, erode_kernel=5, dilate_kernel=5)
 
         # 應該全是背景
         assert np.all(trimap == 0)
@@ -150,19 +149,16 @@ class TestAdvancedDefringing:
 
     def test_defringing_disabled_low_strength(self) -> None:
         """測試低強度時禁用 defringing"""
-        backend = UltraBackend(strength=0.3)
         image = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
         alpha = np.full((100, 100), 128, dtype=np.uint8)
 
-        result = backend._apply_advanced_defringing(image, alpha)
+        result = apply_advanced_defringing(image, alpha, strength=0.3)
 
         # 低強度應該不處理，返回原圖
         np.testing.assert_array_equal(result, image)
 
     def test_defringing_enabled_high_strength(self) -> None:
         """測試高強度時啟用 defringing"""
-        backend = UltraBackend(strength=0.8)
-
         # 創建有色偏的圖片（偏綠）
         image = np.zeros((100, 100, 3), dtype=np.uint8)
         image[:, :, 0] = 100  # R
@@ -172,7 +168,7 @@ class TestAdvancedDefringing:
         # 半透明 alpha
         alpha = np.full((100, 100), 128, dtype=np.uint8)
 
-        result = backend._apply_advanced_defringing(image, alpha)
+        result = apply_advanced_defringing(image, alpha, strength=0.8)
 
         # 應該有改變（減少綠色偏移）
         assert not np.array_equal(result, image)
@@ -181,11 +177,10 @@ class TestAdvancedDefringing:
 
     def test_defringing_preserves_opaque_regions(self) -> None:
         """測試不透明區域不受影響"""
-        backend = UltraBackend(strength=0.8)
         image = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
         alpha = np.full((100, 100), 255, dtype=np.uint8)  # 完全不透明
 
-        result = backend._apply_advanced_defringing(image, alpha)
+        result = apply_advanced_defringing(image, alpha, strength=0.8)
 
         # 完全不透明的區域應該基本不變（可能有小數運算誤差）
         assert np.allclose(result, image, atol=10)
@@ -196,11 +191,11 @@ class TestColorFilter:
 
     def test_color_filter_disabled(self) -> None:
         """測試禁用色彩過濾"""
-        backend = UltraBackend()
+        color_filter = ColorFilterConfig(enabled=False, color=ColorFilter.NONE)
         image = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
         alpha = np.full((100, 100), 200, dtype=np.uint8)
 
-        result_alpha = backend._apply_color_filter(image, alpha)
+        result_alpha = apply_color_filter(image, alpha, color_filter)
 
         # 禁用時應該返回原 alpha
         np.testing.assert_array_equal(result_alpha, alpha)
@@ -208,7 +203,6 @@ class TestColorFilter:
     def test_green_color_filter(self) -> None:
         """測試綠色過濾（RGB despill，不修改 alpha）"""
         color_filter = ColorFilterConfig(enabled=True, color=ColorFilter.GREEN)
-        backend = UltraBackend(color_filter=color_filter)
 
         # 創建綠色背景圖片
         image = np.zeros((100, 100, 3), dtype=np.uint8)
@@ -218,7 +212,7 @@ class TestColorFilter:
 
         alpha = np.full((100, 100), 200, dtype=np.uint8)
 
-        result_alpha = backend._apply_color_filter(image, alpha)
+        result_alpha = apply_color_filter(image, alpha, color_filter)
 
         # 綠色模式不修改 alpha（避免過度移除）
         assert np.array_equal(result_alpha, alpha)
@@ -230,7 +224,6 @@ class TestColorFilter:
     def test_white_color_filter(self) -> None:
         """測試白色過濾"""
         color_filter = ColorFilterConfig(enabled=True, color=ColorFilter.WHITE)
-        backend = UltraBackend(color_filter=color_filter)
 
         # 創建白色背景圖片
         image = np.zeros((100, 100, 3), dtype=np.uint8)
@@ -239,7 +232,7 @@ class TestColorFilter:
 
         alpha = np.full((100, 100), 200, dtype=np.uint8)
 
-        result_alpha = backend._apply_color_filter(image, alpha)
+        result_alpha = apply_color_filter(image, alpha, color_filter)
 
         # 白色區域的 alpha 應該被降低
         assert np.mean(result_alpha[:50, :]) < np.mean(alpha[:50, :])
@@ -247,7 +240,6 @@ class TestColorFilter:
     def test_black_color_filter(self) -> None:
         """測試黑色過濾"""
         color_filter = ColorFilterConfig(enabled=True, color=ColorFilter.BLACK)
-        backend = UltraBackend(color_filter=color_filter)
 
         # 創建黑色背景圖片
         image = np.zeros((100, 100, 3), dtype=np.uint8)
@@ -256,7 +248,7 @@ class TestColorFilter:
 
         alpha = np.full((100, 100), 200, dtype=np.uint8)
 
-        result_alpha = backend._apply_color_filter(image, alpha)
+        result_alpha = apply_color_filter(image, alpha, color_filter)
 
         # 黑色區域的 alpha 應該被降低
         assert np.mean(result_alpha[:50, :]) < np.mean(alpha[:50, :])
