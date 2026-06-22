@@ -83,6 +83,7 @@ class UltraBackend(BaseBackend):
     # Trimap 參數
     TRIMAP_ERODE_KERNEL: ClassVar[int] = 10  # 腐蝕核大小
     TRIMAP_DILATE_KERNEL: ClassVar[int] = 10  # 膨脹核大小
+    MODEL_ALIGNMENT: ClassVar[int] = 32
 
     def __init__(  # noqa: PLR0913
         self,
@@ -170,27 +171,39 @@ class UltraBackend(BaseBackend):
 
         # 根據解析度配置決定推論尺寸
         inference_size = self._get_inference_size(original_size)
+        aligned_inference_size = self._align_inference_size(inference_size)
+
+        if aligned_inference_size != inference_size:
+            logger.info(
+                "Adjusting inference size from %dx%d to model-compatible %dx%d",
+                inference_size[0],
+                inference_size[1],
+                aligned_inference_size[0],
+                aligned_inference_size[1],
+            )
 
         logger.debug(
-            "Resolution: %dx%d → %dx%d (mode: %s)",
+            "Resolution: %dx%d → %dx%d (aligned: %dx%d, mode: %s)",
             original_size[0],
             original_size[1],
             inference_size[0],
             inference_size[1],
+            aligned_inference_size[0],
+            aligned_inference_size[1],
             self.resolution_config.mode.value,
         )
 
         # 取得或建立轉換器（快取以避免重複建立）
-        transform = self._transform_cache.get(inference_size)
+        transform = self._transform_cache.get(aligned_inference_size)
         if transform is None:
             transform = transforms.Compose(
                 [
-                    transforms.Resize(inference_size),
+                    transforms.Resize(aligned_inference_size),
                     transforms.ToTensor(),
                     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
                 ]
             )
-            self._transform_cache[inference_size] = transform
+            self._transform_cache[aligned_inference_size] = transform
 
         # 轉換並推論
         input_tensor = transform(image).unsqueeze(0).to(self.device)
@@ -233,6 +246,25 @@ class UltraBackend(BaseBackend):
 
         target_size = size_map.get(mode, 1024)
         return (target_size, target_size)
+
+    @classmethod
+    def _align_inference_size(
+        cls, inference_size: tuple[int, int]
+    ) -> tuple[int, int]:
+        """
+        將推論尺寸對齊到模型可接受的倍數（避免 patch concat 維度錯誤）。
+
+        Args:
+            inference_size: 原始推論尺寸 (width, height)
+
+        Returns:
+            對齊後的推論尺寸
+        """
+        width, height = inference_size
+        align = cls.MODEL_ALIGNMENT
+        aligned_width = ((width + align - 1) // align) * align
+        aligned_height = ((height + align - 1) // align) * align
+        return (max(align, aligned_width), max(align, aligned_height))
 
     def process(self, input_path: Path, output_path: Path) -> bool:
         """

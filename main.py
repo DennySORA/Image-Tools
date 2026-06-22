@@ -10,8 +10,21 @@
 
 import logging
 import sys
+from importlib import import_module
 
 from src.app import ApplicationService
+
+
+def _register_backends() -> None:
+    """確保後端模組在應用程式啟動前完成註冊。"""
+    backend_modules = [
+        "src.backends.ultra",
+        "src.backends.gemini_watermark",
+        "src.backends.image_splitter",
+        "src.backends.batch_compare",
+    ]
+    for module_path in backend_modules:
+        import_module(module_path)
 
 
 def main() -> int:
@@ -28,6 +41,8 @@ def main() -> int:
         level=logging.INFO,
         format="%(message)s",
     )
+
+    _register_backends()
 
     # 建立並執行應用程式服務
     app = ApplicationService()
